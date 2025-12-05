@@ -179,7 +179,8 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
         nsteps=args.nsteps,
         omega=args.omega,
         pIKKT_type=args.pIKKT_type,
-        spin=args.spin
+        spin=args.spin,
+        source=args.source,
     )
 
     os.makedirs(args.data_path, exist_ok=True)
@@ -199,6 +200,8 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
     print(f"  Save                     = {args.save}")
     print(f"  outputs                  = {paths['eigs']}")
     print(f"  device/dtype             = {device}/{dtype}")
+    if params.source is not None:
+        print(f"  Source                   = {args.source}")
     print("------------------------------------------------\n")
 
     if args.dry_run:

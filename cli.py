@@ -4,9 +4,19 @@ import argparse
 import os
 from typing import Sequence
 
+import numpy as np
+
 root_path = ("/mnt/beegfs/hmurali/ML" if os.path.isdir('/mnt/beegfs/hmurali/ML') else "../")
 DEFAULT_DATA_PATH = os.path.join(root_path, "data")
 DEFAULT_PROFILE = False
+
+
+def _parse_source(expr: str):
+    """Evaluate a numpy-based expression like np.linspace(-1,1,20) for --source."""
+    try:
+        return eval(expr, {"np": np}, {})  # noqa: S307 - controlled namespace for numpy expressions
+    except Exception as exc:  # pragma: no cover - arg parsing error path
+        raise argparse.ArgumentTypeError(f"Invalid --source expression {expr!r}: {exc}") from exc
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -34,6 +44,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--force", action="store_true", help="Overwrite existing output files and checkpoint")
     parser.add_argument("--dry-run", action="store_true", help="Print resolved configuration and exit")
     parser.add_argument("--spin", type=float, default=0.0, help="Spin for the fuzzy sphere. Should be less than (N-1)/2.")
+    parser.add_argument("--source", type=_parse_source, default=None, help="Numpy expression for source, e.g., np.linspace(-1,1,20)")
     args = parser.parse_args(argv)
     validate_args(args)
     return args
@@ -53,6 +64,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--step-size must be positive")
     if args.save_every < 1:
         raise ValueError("--save-every must be positive")
+    if args.source is not None and args.source.shape != (args.ncol,):
+        raise ValueError(f"--source expression must evaluate to shape ({args.ncol},), got {args.source.shape}") 
 
 
 __all__ = ["parse_args", "DEFAULT_DATA_PATH", "DEFAULT_PROFILE"]

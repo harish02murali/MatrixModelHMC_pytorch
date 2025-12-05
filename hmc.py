@@ -20,6 +20,7 @@ class SimulationParams:
     omega: float
     pIKKT_type: int
     spin: float
+    source: np.ndarray | None = None
 
 
 def potential(X: torch.Tensor, params: SimulationParams) -> torch.Tensor:
@@ -33,6 +34,7 @@ def potential(X: torch.Tensor, params: SimulationParams) -> torch.Tensor:
 
     s1 = 0.0 + 0.0j
     det = 0.0 + 0.0j
+    src = 0.0 + 0.0j
 
     for i in range(params.nmat):
         for j in range(i + 1, params.nmat):
@@ -49,8 +51,11 @@ def potential(X: torch.Tensor, params: SimulationParams) -> torch.Tensor:
         for i in range(params.nmat):
             s1 = s1 + ( (2/9 if i < 3 else 0) + params.omega / 3) * torch.trace(X[i] @ X[i])
         det = -logDetM_type2(X)[1].real
+    
+    if params.source is not None:
+        src  = -(params.ncol / np.sqrt(params.coupling)) * torch.trace(torch.tensor(np.diag(params.source), device=X.device, dtype=X.dtype) @ X[0])
 
-    val = (s1.real * (params.ncol / params.coupling)) + det
+    val = (s1.real * (params.ncol / params.coupling)) + det + src.real
 
     return val
 
