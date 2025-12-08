@@ -18,6 +18,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Iterable, Sequence
+from dataclasses import dataclass, replace
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -97,18 +98,18 @@ def spinJMatrices(j_val: float):
     return np.stack([Jx, Jy, Jz], axis=0)
 
 
-def initialize_fields(nmat: int, ncol: int, spin: float) -> torch.Tensor:
+def initialize_fields(params: SimulationParams) -> torch.Tensor:
     """Initialize configuration matrices to random hermitian or a spin-j representation."""
-    X = torch.zeros((nmat, ncol, ncol), dtype=dtype, device=device)
-    x0 = random_hermitian(ncol)
-    if spin == 0.0:
-        for i in range(nmat):
-            X[i] = x0.clone()
+    X = torch.zeros((params.nmat, params.ncol, params.ncol), dtype=dtype, device=device)
+    if params.spin == 0.0:
+        return X
+        # for i in range(nmat):
+        #     X[i] = random_hermitian(ncol, dtype=dtype, device=device)
     else:
-        J_matrices = torch.from_numpy(spinJMatrices(spin)).to(dtype=dtype, device=device)
-        ntimes = ncol // J_matrices.shape[1]
+        J_matrices = torch.from_numpy(spinJMatrices(params.spin)).to(dtype=dtype, device=device)
+        ntimes = params.ncol // J_matrices.shape[1]
         for i in range(3):
-            X[i] = torch.kron(torch.eye(ntimes, dtype=dtype, device=device), J_matrices[i])
+            X[i] = (2/3 + params.omega) * torch.kron(torch.eye(ntimes, dtype=dtype, device=device), J_matrices[i])
 
     return X
 
@@ -124,12 +125,13 @@ def load_configuration(resume: bool, ckpt_path: str, X: torch.Tensor) -> tuple[b
     return False, X
 
 
-def thermalize(X: torch.Tensor, params: SimulationParams, steps: int = 10) -> torch.Tensor:
-    """Warm-up trajectories that always accept to reach equilibrium quickly."""
-    print("Thermalization steps, accept all jumps")
+def thermalize(X: torch.Tensor, params: SimulationParams, steps: int = 5) -> torch.Tensor:
+    """Warm-up trajectories that always accept to reach equilibrium quickly. For these steps, we reject rarely and also increase nsteps and reduce dt."""
+    print("Thermalization steps, accept most jumps")
+    therm_params = replace(params, nsteps=int(params.nsteps * 1.5), dt=params.dt / 10)
     acc_count = 0
     for _ in range(steps):
-        X, acc_count = update(X, acc_count, params, reject_prob=0.0)
+        X, acc_count = update(X, acc_count, therm_params, reject_prob=0.0)
     print("End of thermalization")
     return X
 
@@ -211,7 +213,7 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
     seed_everything(args.seed)
     profiler = maybe_profile(args.profile)
 
-    X = initialize_fields(params.nmat, params.ncol, params.spin)
+    X = initialize_fields(params)
     X.zero_()
     resumed, X = load_configuration(args.resume and not args.fresh, paths["ckpt"], X)
 

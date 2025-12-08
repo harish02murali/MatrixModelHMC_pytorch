@@ -142,26 +142,41 @@ def measure_observables(X: torch.Tensor, params: SimulationParams):
             e = torch.linalg.eigvalsh(X[i]).cpu().numpy()
             eigs.append(e)
 
-        if params.nmat >= 4:
-            e_complex = torch.linalg.eigvals((X[0] + 1j * X[1])).cpu().numpy()
-            eigs.append(e_complex)
-            e_complex = torch.linalg.eigvals((X[2] + 1j * X[3])).cpu().numpy()
-            eigs.append(e_complex)
+        e_complex = torch.linalg.eigvals((X[0] + 1j * X[1])).cpu().numpy()
+        eigs.append(e_complex)
+        e_complex = torch.linalg.eigvals((X[2] + 1j * X[3])).cpu().numpy()
+        eigs.append(e_complex)
         
         eigs.append(torch.linalg.eigvalsh(X[0] @ X[0] + X[1] @ X[1] + X[2] @ X[2]).cpu().numpy())
 
-        if params.nmat >= 4:
-            C = X[0] @ X[1] - X[1] @ X[0]
-            A = X[0] @ X[1] + X[1] @ X[0]
-            c1 = torch.trace(C @ C).real
-            c2 = torch.trace(A @ A).real
-            C = X[2] @ X[3] - X[3] @ X[2]
-            A = X[2] @ X[3] + X[3] @ X[2]
-            c3 = torch.trace(C @ C).real
-            c4 = torch.trace(A @ A).real
-            corrs = torch.stack([c1, c2, c3, c4]).cpu().numpy()
-        else:
-            corrs = None
+        C = X[0] @ X[1] - X[1] @ X[0]
+        A = X[0] @ X[1] + X[1] @ X[0]
+        c1 = torch.trace(C @ C).real
+        c2 = torch.trace(A @ A).real
+        C = X[2] @ X[3] - X[3] @ X[2]
+        A = X[2] @ X[3] + X[3] @ X[2]
+        c3 = torch.trace(C @ C).real
+        c4 = torch.trace(A @ A).real
+
+        s1 = 0.0 + 0.0j
+
+        for i in range(params.nmat):
+            for j in range(i + 1, params.nmat):
+                C = X[i] @ X[j] - X[j] @ X[i]
+                s1 = s1 - 0.5 * torch.trace(C @ C)
+
+        if params.pIKKT_type == 1:
+            for i in range(params.nmat):
+                s1 = s1 + torch.trace(X[i] @ X[i])
+
+        if params.pIKKT_type == 2:
+            s1 = s1 + 2j * (1 + params.omega) * (torch.trace(X[0] @ X[1] @ X[2]) - torch.trace(X[0] @ X[2] @ X[1]))
+            for i in range(params.nmat):
+                s1 = s1 + ( (2/9 if i < 3 else 0) + params.omega / 3) * torch.trace(X[i] @ X[i])
+
+        action = (s1.real * (params.ncol / params.coupling))
+
+        corrs = torch.stack([c1, c2, c3, c4, action]).cpu().numpy()
 
     return eigs, corrs
 
