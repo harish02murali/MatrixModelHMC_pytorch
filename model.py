@@ -19,6 +19,7 @@ class ModelParams:
     omega: float
     pIKKT_type: int
     source: np.ndarray | None = None
+    casimir_wall: float | None = None
 
 
 def gammaMajorana() -> torch.Tensor:
@@ -158,6 +159,7 @@ def potential(X: torch.Tensor, params: ModelParams) -> torch.Tensor:
     s1 = 0.0 + 0.0j
     det = 0.0 + 0.0j
     src = 0.0 + 0.0j
+    penalty = 0.0 + 0.0j
 
     for i in range(params.nmat):
         for j in range(i + 1, params.nmat):
@@ -179,8 +181,11 @@ def potential(X: torch.Tensor, params: ModelParams) -> torch.Tensor:
         src = -(params.ncol / np.sqrt(params.coupling)) * torch.trace(
             torch.tensor(np.diag(params.source), device=X.device, dtype=X.dtype) @ X[0]
         )
+    if params.casimir_wall is not None:
+        casimir = torch.trace(X[0] @ X[0] + X[1] @ X[1] + X[2] @ X[2]).real
+        penalty = params.ncol**2 * torch.relu(casimir - params.casimir_wall) ** 2
 
-    val = (s1.real * (params.ncol / params.coupling)) + det + src.real
+    val = (s1.real * (params.ncol / params.coupling)) + det + src.real + penalty.real
 
     return val
 

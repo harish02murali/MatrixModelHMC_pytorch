@@ -45,6 +45,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="Print resolved configuration and exit")
     parser.add_argument("--spin", type=float, default=0.0, help="Spin for the fuzzy sphere. Should be less than (N-1)/2.")
     parser.add_argument("--source", type=_parse_source, default=None, help="Numpy expression for source, e.g., np.linspace(-1,1,20)")
+    parser.add_argument("--casimir-wall", type=float, default=None, help="Add a wall that penalizes large Casimir values")
     args = parser.parse_args(argv)
     validate_args(args)
     return args

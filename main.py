@@ -206,20 +206,17 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
 
         if MDTU % args.save_every == 0:
             save_buffers(ev_X_buf, corr_buf, paths)
-            if args.save:
-                print(
-                    f"Iteration {MDTU}, Acceptance rate so far = {acc_count/MDTU:.3f}, "
-                    f"trX_1^2 = {1 / model_params.ncol * torch.trace(X[0] @ X[0]).item().real:.5f}, "
-                    f"trX_4^2 = {1 / model_params.ncol * torch.trace(X[3] @ X[3]).item().real:.5f}. "
-                    f"Saving configuration to {paths['ckpt']}"
-                )
-                torch.save({"X": X}, paths["ckpt"])
+            if model_params.pIKKT_type == 1:
+                status_string = f"trX_1^2 = {1 / model_params.ncol * torch.trace(X[0] @ X[0]).item().real:.5f}, " +\
+                  f"trX_4^2 = {1 / model_params.ncol * torch.trace(X[3] @ X[3]).item().real:.5f}. "
             else:
-                print(
-                    f"Iteration {MDTU}, Acceptance rate so far = {acc_count/MDTU:.3f}, "
-                    f"trX_1^2 = {1 / model_params.ncol * torch.trace(X[0] @ X[0]).item().real:.5f}, "
-                    f"trX_4^2 = {1 / model_params.ncol * torch.trace(X[3] @ X[3]).item().real:.5f}"
-                )
+                status_string = f"casimir = {1 / model_params.ncol * torch.trace(X[0] @ X[0] + X[1] @ X[1] + X[2] @ X[2]).item().real:.5f}, " +\
+                  f"trX_4^2 = {1 / model_params.ncol * torch.trace(X[3] @ X[3]).item().real:.5f}. "
+                
+            print(f"Iteration {MDTU}, Acceptance rate so far = {acc_count/MDTU:.3f}, " + status_string)
+            if args.save:
+                print(f"Saving configuration to {paths['ckpt']}")
+                torch.save({"X": X}, paths["ckpt"])
 
     if acc_count / max(args.niters, 1) < 0.5:
         print("WARNING: Acceptance rate is below 50%")
