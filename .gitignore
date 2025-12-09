@@ -1,2 +1,4 @@
 *.pyc
 *.sh
+dataAnalysis*.ipynb
+__pycache__/
