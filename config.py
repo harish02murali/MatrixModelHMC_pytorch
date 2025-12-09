@@ -1,4 +1,4 @@
-"""Shared configuration: device selection, dtypes, and gamma matrices."""
+"""Shared configuration: device selection, dtypes."""
 
 import os
 import torch

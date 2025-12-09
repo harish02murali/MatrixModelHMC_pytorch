@@ -1,4 +1,4 @@
-"""CLI parsing helpers for the D=4 pIKKT HMC driver."""
+"""Command Line Interface parsing helpers for the D=4 pIKKT HMC driver."""
 
 import argparse
 import os

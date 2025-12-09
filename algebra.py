@@ -22,9 +22,6 @@ def comm(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
 def random_hermitian(n: int) -> torch.Tensor:
     """
     Draw a random traceless Hermitian n x n matrix.
-
-    Off-diagonal entries are complex Gaussian, diagonals are real Gaussian,
-    matching the spirit of the original box-muller implementation.
     """
     re = torch.randn(n, n, device=device, dtype=real_dtype)
     im = torch.randn(n, n, device=device, dtype=real_dtype)
@@ -166,7 +163,6 @@ def makeH(mat: torch.Tensor) -> torch.Tensor:
 __all__ = [
     "ad_matrix_traceless",
     "comm",
-    "dagger",
     "get_eye_cached",
     "kron_2d",
     "makeH",

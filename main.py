@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 """
-Torch/CUDA HMC driver for the D=4 pIKKT matrix model.
+Entry point for running Hybrid Monte Carlo on the D=4 polarized IKKT matrix model.
 
-Key pieces:
-- run_simulation: orchestrates seeding, I/O setup, HMC trajectories.
-- helper utilities: checkpoint loading, thermalization, profiling.
+Responsibilities:
+- configure model and HMC parameters from the CLI,
+- manage checkpoint/observable I/O,
+- launch HMC trajectories and optional profiling.
 """
 
 from __future__ import annotations
@@ -18,25 +19,24 @@ import sys
 import time
 from pathlib import Path
 from typing import Iterable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
 # Support both package and script execution
 if __package__:
     from .config import dtype, device
-    from .hmc import SimulationParams, measure_observables, update
-    from .algebra import random_hermitian
+    from .hmc import HMCParams, update
+    from .model import ModelParams, measure_observables, potential, spinJMatrices
     from .cli import parse_args, DEFAULT_DATA_PATH, DEFAULT_PROFILE
 else:
     # When executed as "python pIKKT4D/main.py"
     print(str(Path(__file__).resolve().parent))
     sys.path.append(str(Path(__file__).resolve().parent.parent))
     from pIKKT4D.config import dtype, device  # type: ignore
-    from pIKKT4D.hmc import SimulationParams, measure_observables, update  # type: ignore
-    from pIKKT4D.algebra import random_hermitian  # type: ignore
+    from pIKKT4D.hmc import HMCParams, update  # type: ignore
+    from pIKKT4D.model import ModelParams, measure_observables, potential, spinJMatrices  # type: ignore
     from pIKKT4D.cli import parse_args, DEFAULT_DATA_PATH, DEFAULT_PROFILE  # type: ignore
 
 
@@ -58,7 +58,7 @@ def build_paths(name_prefix: str, omega: float, coupling: float, ncol: int, data
 
 
 def ensure_output_slots(paths: Iterable[str], force: bool, allow_existing: bool = False) -> None:
-    """Clear or allow existing outputs depending on the user's intent."""
+    """Validate writable targets for outputs and optionally clear existing files."""
     existing = [p for p in paths if os.path.exists(p)]
     if existing and not (force or allow_existing):
         existing_str = "\n".join(existing)
@@ -70,43 +70,13 @@ def ensure_output_slots(paths: Iterable[str], force: bool, allow_existing: bool 
             os.remove(path)
 
 
-def spinJMatrices(j_val: float):
-    "Generate spin-j angular momentum matrices Jx, Jy, Jz on CPU with NumPy."
-    dim = int(round(2 * j_val + 1))
-
-    Jp = np.zeros((dim, dim), dtype=np.complex128)
-
-    # Physical m-values in descending order: j, j-1, ..., -j
-    m_vals = np.arange(j_val, -j_val - 1, -1, dtype=np.float64)
-
-    # Ladder operator: J+ |m> = sqrt(j(j+1) - m(m+1)) |m+1>
-    # In descending order, raising moves one index up (row = col-1).
-    for col in range(1, dim):
-        m = m_vals[col]
-        Jp[col - 1, col] = np.sqrt(j_val * (j_val + 1) - m * (m + 1))
-
-    Jm = Jp.conj().T
-
-    Jx = 0.5 * (Jp + Jm)
-    Jy = -0.5j * (Jp - Jm)
-    Jz = np.diag(m_vals)
-
-    assert np.allclose(Jx @ Jy - Jy @ Jx, 1j * Jz, atol=1e-7)
-    assert np.allclose(Jy @ Jz - Jz @ Jy, 1j * Jx, atol=1e-7)
-    assert np.allclose(Jz @ Jx - Jx @ Jz, 1j * Jy, atol=1e-7)
-
-    return np.stack([Jx, Jy, Jz], axis=0)
-
-
-def initialize_fields(params: SimulationParams) -> torch.Tensor:
-    """Initialize configuration matrices to random hermitian or a spin-j representation."""
+def initialize_fields(params: ModelParams, spin: float) -> torch.Tensor:
+    """Construct the starting field configuration, optionally embedding a spin-j background."""
     X = torch.zeros((params.nmat, params.ncol, params.ncol), dtype=dtype, device=device)
-    if params.spin == 0.0:
+    if spin == 0.0:
         return X
-        # for i in range(nmat):
-        #     X[i] = random_hermitian(ncol, dtype=dtype, device=device)
     else:
-        J_matrices = torch.from_numpy(spinJMatrices(params.spin)).to(dtype=dtype, device=device)
+        J_matrices = torch.from_numpy(spinJMatrices(spin)).to(dtype=dtype, device=device)
         ntimes = params.ncol // J_matrices.shape[1]
         for i in range(3):
             X[i] = (2/3 + params.omega) * torch.kron(torch.eye(ntimes, dtype=dtype, device=device), J_matrices[i])
@@ -115,7 +85,7 @@ def initialize_fields(params: SimulationParams) -> torch.Tensor:
 
 
 def load_configuration(resume: bool, ckpt_path: str, X: torch.Tensor) -> tuple[bool, torch.Tensor]:
-    """Try loading a checkpoint; return (did_resume, config)."""
+    """Restore a saved configuration when requested, otherwise return the input."""
     if resume and os.path.isfile(ckpt_path):
         print("Reading old configuration file:", ckpt_path)
         ckpt = torch.load(ckpt_path, map_location=device)
@@ -125,13 +95,13 @@ def load_configuration(resume: bool, ckpt_path: str, X: torch.Tensor) -> tuple[b
     return False, X
 
 
-def thermalize(X: torch.Tensor, params: SimulationParams, steps: int = 5) -> torch.Tensor:
-    """Warm-up trajectories that always accept to reach equilibrium quickly. For these steps, we reject rarely and also increase nsteps and reduce dt."""
+def thermalize(X: torch.Tensor, hmc_params: HMCParams, model_params: ModelParams, steps: int = 5) -> torch.Tensor:
+    """Run short, mostly-accepting trajectories to move the system toward equilibrium."""
     print("Thermalization steps, accept most jumps")
-    therm_params = replace(params, nsteps=int(params.nsteps * 1.5), dt=params.dt / 10)
+    therm_params = replace(hmc_params, nsteps=int(hmc_params.nsteps * 1.5), dt=hmc_params.dt / 10)
     acc_count = 0
     for _ in range(steps):
-        X, acc_count = update(X, acc_count, therm_params, reject_prob=0.0)
+        X, acc_count = update(X, acc_count, therm_params, model_params, potential, reject_prob=0.0)
     print("End of thermalization")
     return X
 
@@ -163,7 +133,7 @@ def save_buffers(ev_buf: list[np.ndarray], corr_buf: list[np.ndarray], paths: di
 
 
 def seed_everything(seed: int | None) -> None:
-    """Set RNG seeds for reproducibility when requested."""
+    """Seed numpy and torch generators for reproducibility when a seed is provided."""
     if seed is None:
         return
     torch.manual_seed(seed)
@@ -171,18 +141,19 @@ def seed_everything(seed: int | None) -> None:
 
 
 def run_simulation(args: argparse.Namespace) -> torch.Tensor:
-    """Entry point: configure and launch the HMC loop."""
+    """Configure model/HMC parameters and execute the requested number of trajectories."""
     dt = args.step_size / args.nsteps
-    params = SimulationParams(
+    model_params = ModelParams(
         nmat=NMAT_DEFAULT,
         ncol=args.ncol,
         coupling=args.coupling,
-        dt=dt,
-        nsteps=args.nsteps,
         omega=args.omega,
         pIKKT_type=args.pIKKT_type,
-        spin=args.spin,
         source=args.source,
+    )
+    hmc_params = HMCParams(
+        dt=dt,
+        nsteps=args.nsteps,
     )
 
     os.makedirs(args.data_path, exist_ok=True)
@@ -192,17 +163,17 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
 
     print("\n------------------------------------------------")
     print("Configuration:")
-    print(f"  4D Polarized IKKT type   = {params.pIKKT_type}")
-    print(f"  Matrix size N            = {params.ncol}")
+    print(f"  4D Polarized IKKT type   = {model_params.pIKKT_type}")
+    print(f"  Matrix size N            = {model_params.ncol}")
     print(f"  Number of Trajectories   = {args.niters}")
-    print(f"  Coupling g               = {params.coupling}")
-    if params.pIKKT_type == "type2":
-        print(f"  Omega2/Omega1            = {params.omega}")
-    print(f"  Step size, Nsteps        = {args.step_size}, {params.nsteps} (dt = {params.dt})")
+    print(f"  Coupling g               = {model_params.coupling}")
+    if model_params.pIKKT_type == 2:
+        print(f"  Omega2/Omega1            = {model_params.omega}")
+    print(f"  Step size, Nsteps        = {args.step_size}, {hmc_params.nsteps} (dt = {hmc_params.dt})")
     print(f"  Save                     = {args.save}")
     print(f"  outputs                  = {paths['eigs']}")
     print(f"  device/dtype             = {device}/{dtype}")
-    if params.source is not None:
+    if model_params.source is not None:
         print(f"  Source                   = {args.source}")
     print("------------------------------------------------\n")
 
@@ -213,23 +184,22 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
     seed_everything(args.seed)
     profiler = maybe_profile(args.profile)
 
-    X = initialize_fields(params)
+    X = initialize_fields(model_params, args.spin)
     X.zero_()
     resumed, X = load_configuration(args.resume and not args.fresh, paths["ckpt"], X)
 
     if not resumed:
-        # X.zero_()
         ensure_output_slots([paths["eigs"], paths["comms"]], force=True)
-        X = thermalize(X, params)
+        X = thermalize(X, hmc_params, model_params)
 
     acc_count = 0
     ev_X_buf: list[np.ndarray] = []
     corr_buf: list[np.ndarray] = []
 
     for MDTU in range(1, args.niters + 1):
-        X, acc_count = update(X, acc_count, params)
+        X, acc_count = update(X, acc_count, hmc_params, model_params, potential)
 
-        eigs, corrs = measure_observables(X, params)
+        eigs, corrs = measure_observables(X, model_params)
         ev_X_buf.append(np.concatenate(eigs))
         if corrs is not None:
             corr_buf.append(corrs)
@@ -239,16 +209,16 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
             if args.save:
                 print(
                     f"Iteration {MDTU}, Acceptance rate so far = {acc_count/MDTU:.3f}, "
-                    f"trX_1^2 = {1 / params.ncol * torch.trace(X[0] @ X[0]).item().real:.5f}, "
-                    f"trX_4^2 = {1 / params.ncol * torch.trace(X[3] @ X[3]).item().real:.5f}. "
+                    f"trX_1^2 = {1 / model_params.ncol * torch.trace(X[0] @ X[0]).item().real:.5f}, "
+                    f"trX_4^2 = {1 / model_params.ncol * torch.trace(X[3] @ X[3]).item().real:.5f}. "
                     f"Saving configuration to {paths['ckpt']}"
                 )
                 torch.save({"X": X}, paths["ckpt"])
             else:
                 print(
                     f"Iteration {MDTU}, Acceptance rate so far = {acc_count/MDTU:.3f}, "
-                    f"trX_1^2 = {1 / params.ncol * torch.trace(X[0] @ X[0]).item().real:.5f}, "
-                    f"trX_4^2 = {1 / params.ncol * torch.trace(X[3] @ X[3]).item().real:.5f}"
+                    f"trX_1^2 = {1 / model_params.ncol * torch.trace(X[0] @ X[0]).item().real:.5f}, "
+                    f"trX_4^2 = {1 / model_params.ncol * torch.trace(X[3] @ X[3]).item().real:.5f}"
                 )
 
     if acc_count / max(args.niters, 1) < 0.5:
