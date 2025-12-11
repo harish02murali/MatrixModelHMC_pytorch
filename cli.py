@@ -22,17 +22,18 @@ def _parse_source(expr: str):
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     """User-facing CLI with flags."""
     parser = argparse.ArgumentParser(
-        description="Choosing pIKKT model type and simulation parameters.",
+        description="Choosing the matrix model and simulation parameters.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--pIKKT-type", type=int, choices=[1, 2], default=1, help="Choose pIKKT model type (1 or 2)")
+    parser.add_argument("--model", type=str, required=True, help="Matrix model name registered in models.py (e.g., pikkt4d_type1, pikkt4d_type2, yangmills)")
     parser.add_argument("--resume", action="store_true", help="Load a checkpoint if present")
     parser.add_argument("--fresh", action="store_true", help="Ignore checkpoints and start from zero fields")
     parser.add_argument("--save", action="store_true", help="Save configurations every --save-every trajectories")
     parser.add_argument("--ncol", type=int, default=4, help="Matrix size N")
+    parser.add_argument("--nmat", type=int, default=None, help="Number of matrices")
     parser.add_argument("--niters", type=int, default=300, help="Number of trajectories to run")
-    parser.add_argument("--coupling", type=float, default=100, help="Coupling g")
-    parser.add_argument("--omega", type=float, default=1.0, help="Ratio of Omega2/Omega1")
+    parser.add_argument("--coupling", type=float, nargs="+", default=[100.0], help="Coupling g (can specify multiple, depending on model)")
+    parser.add_argument("--gpu", action="store_true", default=False, help="Use CUDA GPU if available")
     parser.add_argument("--name", type=str, default="run", help="Prefix for outputs")
     parser.add_argument("--step-size", type=float, dest="step_size", default=2, help="Leapfrog step size Δt")
     parser.add_argument("--nsteps", type=int, default=180, help="Leapfrog steps per trajectory")
@@ -43,9 +44,10 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=None, help="Set RNG seed for reproducibility")
     parser.add_argument("--force", action="store_true", help="Overwrite existing output files and checkpoint")
     parser.add_argument("--dry-run", action="store_true", help="Print resolved configuration and exit")
-    parser.add_argument("--spin", type=float, default=0.0, help="Spin for the fuzzy sphere. Should be less than (N-1)/2.")
     parser.add_argument("--source", type=_parse_source, default=None, help="Numpy expression for source, e.g., np.linspace(-1,1,20)")
-    parser.add_argument("--casimir-wall", type=float, default=None, help="Add a wall that penalizes large Casimir values")
+    type2_group = parser.add_argument_group("Type II options", "Only relevant when --model pikkt4d_type2 is selected")
+    type2_group.add_argument("--spin", type=float, default=None, help="Spin for the fuzzy sphere background")
+    type2_group.add_argument("--no-myers", action="store_true", help="Disable the Myers term in the Type II action")
     args = parser.parse_args(argv)
     validate_args(args)
     return args
@@ -57,8 +59,18 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--ncol must be positive")
     if args.niters < 1:
         raise ValueError("--niters must be positive")
-    if args.coupling <= 0:
-        raise ValueError("--coupling must be positive")
+    if len(args.coupling) == 0:
+        raise ValueError("--coupling requires at least one value")
+    model_lower = args.model.lower()
+    if model_lower == "pikkt4d_type1" and len(args.coupling) != 1:
+        raise ValueError("pIKKT Type I requires exactly one coupling g via --coupling g")
+    if model_lower == "pikkt4d_type2" and len(args.coupling) != 2:
+        raise ValueError("pIKKT Type II requires exactly two couplings via --coupling g omega")
+    if model_lower == "yangmills":
+        if len(args.coupling) != 1:
+            raise ValueError("Yang-Mills model requires a single coupling g via --coupling g")
+        if args.nmat < 2:
+            raise ValueError("--nmat must be atleast 2 for Yang-Mills model")
     if args.nsteps < 1:
         raise ValueError("--nsteps must be positive")
     if args.step_size <= 0:

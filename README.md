@@ -1,77 +1,84 @@
 # pIKKT4D Hybrid Monte Carlo
 
-Python/Torch implementation of Hybrid Monte Carlo for the polarized $D=4$ IKKT (IIB) matrix model (see [A. Martina, arXiv:2507.17813](https://arxiv.org/pdf/2507.17813)). The code cleanly separates the model-specific action and observables (`model.py`) from the HMC integrator (`hmc.py`).
+Python/Torch implementation of Hybrid Monte Carlo for the polarized $D=4$ IKKT (IIB) matrix model (see [A. Martina, arXiv:2507.17813](https://arxiv.org/pdf/2507.17813)). The code cleanly separates the model-specific action and observables (`models.py`) from the HMC integrator (`hmc.py`).
 
 ## Model
 
 The four Hermitian matrices $X_I$ (with $I=1\ldots4$) and their fermionic partners $\psi$ are evolved with two supersymmetric mass deformations
 
-**Type I, $SO(4)$ invariant, single coupling constant $\lambda$**
+**Type I, $SO(4)$ invariant, single coupling constant $g$**
 
 $$
-S_{D=4,\text{type I}}=\frac{1}{\lambda}\,\text{Tr}\Bigl[-\frac14 [X_I,X_J]^2 -\frac{i}{2}\bar\psi \Gamma^I [X_I,\psi] + X_I^2 + \bar\psi\psi \Bigr]
+S_{D=4,\text{type I}}=\frac{1}{g}\text{Tr}\Bigl[-\frac14 [X_I,X_J]^2 -\frac{i}{2}\bar\psi \Gamma^I [X_I,\psi] + X_I^2 + \bar\psi\psi \Bigr]
 $$
 
-**Type II, $SO(3)$ invariant, two coupling constants $\lambda$ and $\omega$**
+**Type II, $SO(3)$ invariant, two coupling constants $g$ and $\omega$**
 
 $$
 \begin{aligned}
-S_{D=4,\text{type II}}=\frac{1}{\lambda}\,\text{Tr}\Bigl[&-\frac14 [X_I,X_J]^2 -\frac{i}{2}\bar\psi \Gamma^I [X_I,\psi] + i \frac{2}{3}(1+\omega)\,\epsilon_{ijk} X_i X_j X_k \\
+S_{D=4,\text{type II}}=\frac{1}{g}\text{Tr}\Bigl[&-\frac14 [X_I,X_J]^2 -\frac{i}{2}\bar\psi \Gamma^I [X_I,\psi] + i \frac{2}{3}(1+\omega)\,\epsilon_{ijk} X_i X_j X_k \\
 &+ \frac{1}{3}\left(\omega + \frac{2}{3}\right) X_i X_i + \frac{\omega}{3} X_4^2 - \frac{1}{3} \bar\psi \Gamma^{123} \psi \Bigr]
 \end{aligned}
 $$
 
-In this codebase the couplings and the type of mass deformation map to `omega`, `coupling` and `pIKKT_type` in `ModelParams`:
-- `pIKKT_type=1` selects the Type I action.
-- `pIKKT_type=2` selects the Type II action.
+In this codebase the couplings and mass-deformation choice are set via the CLI flags `--coupling` and `--model`. Use `--model pikkt4d_type1` for the Type I deformation (pass a single value to `--coupling`, interpreted as $g$) and `--model pikkt4d_type2` for Type II (two values to `--coupling`: first $g$, second $\omega$). A generic $D$-dimensional Yang-Mills model is also available via `--model yangmills`, where you can set the dimension with `--nmat`. You can register additional models in `models.py` and select them at runtime via `--model`.
 
-Fermion determinants are evaluated via the reduced Majorana/Weyl matrices in `model.py`.
+Fermion determinants are evaluated via the reduced Majorana/Weyl matrices in `models.py`. 
+
+The package also includes a generic $D$-dimensional Yang-Mills matrix model (choose `--model yangmills`), whose action is $\frac{N}{g} \left(\sum_i \operatorname{Tr}(X_i^2) - \frac14\sum_{ij} \operatorname{Tr}([X_i,X_j]^2)\right)$.
 
 ## Setup
 
-The project uses Python 3 with PyTorch. Ensure `torch` is installed with CUDA support if available; otherwise it will fall back to CPU (significantly slower!). No extra dependencies are required beyond NumPy and Matplotlib for analysis.
+The project uses Python 3 with PyTorch. Ensure `torch` is installed with CUDA support if available; otherwise it will fall back to CPU (significantly slower for the polarized IKKT models. This is due to the $O(N^6)$ scaling of computing derivatives of the fermionic determinant. For pure bosonic models, CPU is actually faster because of the data transfer and kernel launch overheads). No extra dependencies are required beyond NumPy and Matplotlib for analysis.
 
 ## Usage
 
-With this code, we can run $N=45$ with $400$ steps in under $2$ hours on `NVIDIA GeForce RTX 2080 Ti`.
+With this code, we can run $4D$ Polarized IKKT at $N=45$ with $400$ steps in under $2$ hours on `NVIDIA GeForce RTX 2080 Ti`.
 
-Basic run (Type I, $N=10,\ \lambda=100$). Outputs stored to `outputs/eigenvalues_myrun_*.dat` and `outputs/comm2_myrun_*.dat`:
+Basic run (Type I, $N=10,\ g=100$). Outputs stored to `outputs/myRunName_pikkt4d_type1_g100.0_N10/`:
 
 ```bash
-python main.py --pIKKT-type 1 --ncol 10 --niters 300 --coupling 100.0 --fresh --name myrun --data-path outputs
+python main.py --model pikkt4d_type1 --ncol 10 --niters 300 --coupling 100.0 --fresh --name myRunName --data-path outputs
 ```
 
-Type II with $N=10,\ \omega = 1$ and $\lambda=100$:
+Type II with $N=10,\ \omega = 1$ and $g=100$ (note the double entry for `--coupling`):
 
 ```bash
-python main.py --pIKKT-type 2 --omega 1.0 --ncol 10 --niters 300 --coupling 100.0 --fresh --name myrun --data-path outputs
+python main.py --model pikkt4d_type2 --ncol 10 --niters 300 --coupling 100.0 1.0 --fresh --name myRunName --data-path outputs
+```
+
+$D$-dimensional Yang-Mills with $D=6$, $N=12$, and $g=50$:
+
+```bash
+python main.py --model yangmills --nmat 6 --ncol 12 --niters 200 --coupling 50.0 --fresh --name ymRun --data-path outputs
 ```
 
 Resume from a checkpoint:
 
 ```bash
-python main.py --resume --name myrun --data-path outputs
+python main.py --resume --name myRunName --data-path outputs
 ```
 
 Key flags (see `cli.py` for defaults):
-- `--pIKKT-type {1,2}`: choose model variant.
+- `--model NAME`: registered matrix model (required argument).
 - `--ncol N`: matrix size \(N\).
 - `--niters K`: HMC trajectories to run.
 - `--step-size`, `--nsteps`: leapfrog integrator controls ($\Delta t$ and steps).
-- `--omega`: anisotropy/cubic coupling (used for type II).
+- `--coupling ...`: list of couplings (Type I expects a single $g$, Type II expects two values: $g$ and the ratio $\omega$).
+- `--gpu`: uses gpu when available. defaults to cpu
 - `--save`, `--save-every`: checkpoint cadence.
 - `--data-path`: directory for outputs/checkpoints.
 - `--seed`: RNG seed for deterministic runs.
-- `--spin`: initialize with a fuzzy-sphere background of spin $j$ (optional).
+- `--nmat`: number of matrices (dimension), overwritten for `--model pikkt4d_type2` and `--model pikkt4d_type1`.
+- **Type II options** (only meaningful when `--model pikkt4d_type2`): `--spin` (optional fuzzy-sphere background) and `--no-myers` (disable the Myers term).
 
 Outputs:
-- Eigenvalues and correlators are written to `data_path` with `eigenvalues_*.dat` and `comm2_*.dat`.
-- Checkpoints are stored as `config_*.pt`.
+- Each run writes to `data_path/{name}_{model}_g{...}_N{...}/` and stores eigenvalues, correlators, and checkpoints as `evals.dat`, `corrs.dat`, and `checkpoint.pt` inside that directory.
 
 ## Code structure
 
 - `main.py` — CLI entry point, I/O, thermalization, and trajectory loop.
 - `cli.py` — argument parsing and validation.
-- `model.py` — action, fermion determinants, observables, spin backgrounds.
+- `models.py` — action, fermion determinants, observables, spin backgrounds.
 - `hmc.py` — model-agnostic leapfrog integrator and Metropolis step.
 - `algebra.py` — Hermitian/traceless projections and adjoint actions.  
