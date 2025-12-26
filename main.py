@@ -13,8 +13,10 @@ from __future__ import annotations
 import argparse
 import cProfile
 import datetime
+import json
 import os
 import pstats
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -56,6 +58,20 @@ def ensure_output_slots(paths: Iterable[str], force: bool, allow_existing: bool 
             os.remove(path)
 
 
+def prepare_matrix_snapshot_dir(run_dir: str, *, force: bool, allow_existing: bool) -> str:
+    """Create (or reset) the directory for saving raw matrices."""
+    target = os.path.join(run_dir, "all_mats")
+    if os.path.exists(target):
+        if force:
+            shutil.rmtree(target)
+        elif not allow_existing:
+            raise FileExistsError(
+                f"Matrix snapshot directory {target} already exists. Use --force or --resume appropriately."
+            )
+    os.makedirs(target, exist_ok=True)
+    return target
+
+
 def maybe_profile(enabled: bool):
     if not enabled:
         return None
@@ -73,13 +89,34 @@ def stop_and_report_profile(profiler: cProfile.Profile | None):
     ps.print_stats(10)
 
 
+def _append_npz(path: str, values: np.ndarray, *, key: str, dtype: np.dtype) -> None:
+    """Append new measurements to an .npz file (reloads existing data if present)."""
+    if values.size == 0:
+        return
+    new_values = np.asarray(values, dtype=dtype)
+    if os.path.exists(path):
+        with np.load(path) as existing:
+            existing_values = existing[key]
+        new_values = np.concatenate((existing_values, new_values), axis=0)
+    np.savez(path, **{key: new_values})
+
+
 def save_buffers(ev_buf: list[np.ndarray], corr_buf: list[np.ndarray], paths: dict[str, str]) -> None:
-    with open(paths["eigs"], "a") as f:
-        np.array(ev_buf).astype("complex128").tofile(f)
+    if ev_buf:
+        stacked = np.stack(ev_buf).astype(np.complex128)
+        _append_npz(paths["eigs"], stacked, key="values", dtype=np.complex128)
         ev_buf.clear()
-    with open(paths["corrs"], "a") as f:
-        np.array(corr_buf).astype("complex128").tofile(f)
+    if corr_buf:
+        stacked = np.stack(corr_buf).astype(np.complex128)
+        _append_npz(paths["corrs"], stacked, key="values", dtype=np.complex128)
         corr_buf.clear()
+
+
+def save_matrix_snapshot(model: MatrixModel, directory: str, iteration: int) -> None:
+    """Persist the full matrix configuration for debugging/analysis."""
+    state = model.get_state().detach().cpu().numpy()
+    filename = os.path.join(directory, f"{iteration}.npz")
+    np.savez(filename, X=state)
 
 
 def seed_everything(seed: int | None) -> None:
@@ -88,6 +125,27 @@ def seed_everything(seed: int | None) -> None:
         return
     torch.manual_seed(seed)
     np.random.seed(seed)
+
+
+def write_run_metadata(path: str, model: MatrixModel, args: argparse.Namespace) -> None:
+    summary = {
+        "model": model.run_metadata(),
+        "cli": {
+            "name": args.name,
+            "data_path": args.data_path,
+            "niters": args.niters,
+            "step_size": args.step_size,
+            "nsteps": args.nsteps,
+            "save_every": args.save_every,
+            "save_all_mats": args.saveAllMats,
+            "fresh": args.fresh,
+            "resume": args.resume,
+            "seed": args.seed,
+            "timestamp": datetime.datetime.now().isoformat(),
+        },
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
 
 
 def run_simulation(args: argparse.Namespace) -> torch.Tensor:
@@ -103,6 +161,10 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
     os.makedirs(paths["dir"], exist_ok=True)
     allow_existing = args.resume and not args.fresh
     ensure_output_slots([paths["eigs"], paths["corrs"]], force=args.force, allow_existing=allow_existing)
+    matrix_snapshot_dir = None
+    if args.saveAllMats:
+        matrix_snapshot_dir = prepare_matrix_snapshot_dir(paths["dir"], force=args.force, allow_existing=allow_existing)
+    write_run_metadata(paths["meta"], model, args)
 
     print("\n------------------------------------------------")
     print("Configuration:")
@@ -142,12 +204,14 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
         acc_count = update(acc_count, hmc_params, model)
 
         eigs, corrs = model.measure_observables()
-        ev_X_buf.append(np.concatenate(eigs))
+        ev_X_buf.append(np.stack(eigs))
         if corrs is not None:
             corr_buf.append(corrs)
 
         if MDTU % args.save_every == 0:
             save_buffers(ev_X_buf, corr_buf, paths)
+            if matrix_snapshot_dir is not None:
+                save_matrix_snapshot(model, matrix_snapshot_dir, MDTU)
             status_string = model.status_string()
             print(f"Iteration {MDTU}, Acceptance rate so far = {acc_count/MDTU:.3f}, " + status_string)
             if args.save:
@@ -166,7 +230,8 @@ def main(argv: Sequence[str]) -> torch.Tensor:
     print("STARTED:", datetime.datetime.now().strftime("%d %B %Y %H:%M:%S"))
 
     args = parse_args(argv)
-    config.configure_device(args.gpu)
+    config.configure_device(args.noGPU)
+    config.configure_dtype(args.complex64)
     Xfin = run_simulation(args)
 
     print("Runtime =", time.time() - start_time, "s")

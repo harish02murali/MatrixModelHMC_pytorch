@@ -25,15 +25,17 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         description="Choosing the matrix model and simulation parameters.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--model", type=str, required=True, help="Matrix model name registered in models.py (e.g., pikkt4d_type1, pikkt4d_type2, yangmills)")
+    parser.add_argument("--model", type=str, required=True, help="Matrix model name registered in models.py (e.g., 1mm, pikkt4d_type1, pikkt4d_type2, yangmills)")
     parser.add_argument("--resume", action="store_true", help="Load a checkpoint if present")
     parser.add_argument("--fresh", action="store_true", help="Ignore checkpoints and start from zero fields")
     parser.add_argument("--save", action="store_true", help="Save configurations every --save-every trajectories")
+    parser.add_argument("--saveAllMats", action="store_true", help="Store raw matrix configurations every --save-every trajectories")
     parser.add_argument("--ncol", type=int, default=4, help="Matrix size N")
     parser.add_argument("--nmat", type=int, default=None, help="Number of matrices")
     parser.add_argument("--niters", type=int, default=300, help="Number of trajectories to run")
     parser.add_argument("--coupling", type=float, nargs="+", default=[100.0], help="Coupling g (can specify multiple, depending on model)")
-    parser.add_argument("--gpu", action="store_true", default=False, help="Use CUDA GPU if available")
+    parser.add_argument("--no-gpu", action="store_true", dest="noGPU", default=False, help="Disable CUDA GPU even if available")
+    parser.add_argument("--complex64", action="store_true", help="Use complex64/float32 precision instead of complex128/float64")
     parser.add_argument("--name", type=str, default="run", help="Prefix for outputs")
     parser.add_argument("--step-size", type=float, dest="step_size", default=2, help="Leapfrog step size Δt")
     parser.add_argument("--nsteps", type=int, default=180, help="Leapfrog steps per trajectory")
@@ -62,6 +64,9 @@ def validate_args(args: argparse.Namespace) -> None:
     if len(args.coupling) == 0:
         raise ValueError("--coupling requires at least one value")
     model_lower = args.model.lower()
+    if model_lower in ("1mm", "one_matrix"):
+        if len(args.coupling) < 1:
+            raise ValueError("1mm model requires at least one coupling via --coupling t1 [t2 ...]")
     if model_lower == "pikkt4d_type1" and len(args.coupling) != 1:
         raise ValueError("pIKKT Type I requires exactly one coupling g via --coupling g")
     if model_lower == "pikkt4d_type2" and len(args.coupling) != 2:
@@ -71,6 +76,11 @@ def validate_args(args: argparse.Namespace) -> None:
             raise ValueError("Yang-Mills model requires a single coupling g via --coupling g")
         if args.nmat < 2:
             raise ValueError("--nmat must be atleast 2 for Yang-Mills model")
+    if model_lower == "adjoint_det":
+        if len(args.coupling) != 1:
+            raise ValueError("adjoint_det model requires a single coupling g via --coupling g")
+        if args.nmat is None or args.nmat < 1:
+            raise ValueError("--nmat must be provided and positive for adjoint_det model")
     if args.nsteps < 1:
         raise ValueError("--nsteps must be positive")
     if args.step_size <= 0:

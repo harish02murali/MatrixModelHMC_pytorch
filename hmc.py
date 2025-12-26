@@ -6,21 +6,28 @@ from dataclasses import dataclass, replace
 from typing import Any
 import torch
 
-from .algebra import makeH, random_hermitian
+from .algebra import dagger, random_hermitian
 
 @dataclass
 class HMCParams:
     """Integrator controls for an HMC trajectory."""
     dt: float
     nsteps: int
-
+    
 
 def force(X: torch.Tensor, model: Any) -> torch.Tensor:
     """Compute the traceless Hermitian force dV/dX for a given potential."""
     Y = X.detach().requires_grad_(True)
     pot = model.potential(Y)
     pot.backward()
-    return makeH(Y.grad)
+    res = Y.grad
+    if model.is_hermitian:
+        res = 0.5 * (res + dagger(res))
+    if model.is_traceless:
+        trs = torch.diagonal(res, dim1=-2, dim2=-1).sum(-1).real / model.ncol
+        eye = torch.eye(model.ncol, dtype=res.dtype, device=res.device)
+        res = res - trs[..., None, None] * eye
+    return res
 
 
 def hamil(X: torch.Tensor, mom_X: torch.Tensor, model: Any) -> float:
@@ -82,11 +89,11 @@ def update(acc_count: int, hmc_params: HMCParams, model: Any, reject_prob: float
 def thermalize(model: Any, hmc_params: HMCParams, steps: int = 10) -> None:
     """Run short, mostly-accepting trajectories to move the system toward equilibrium."""
     print("Thermalization steps, accept most jumps")
-    therm_params = replace(hmc_params, nsteps=int(hmc_params.nsteps * 1.5), dt=hmc_params.dt / 10)
+    therm_params = replace(hmc_params, nsteps=int(hmc_params.nsteps * 1.5), dt=hmc_params.dt / 10.0)
     acc_count = 0
     for _ in range(steps):
-        acc_count = update(acc_count, therm_params, model, reject_prob=0.0)
-    print("End of thermalization")
+        acc_count = update(acc_count, therm_params, model, reject_prob=0.1)
+    print("End of thermalization ", model.status_string())
 
 __all__ = [
     "HMCParams",

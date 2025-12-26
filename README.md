@@ -73,7 +73,7 @@ Key flags (see `cli.py` for defaults):
 - **Type II options** (only meaningful when `--model pikkt4d_type2`): `--spin` (optional fuzzy-sphere background) and `--no-myers` (disable the Myers term).
 
 Outputs:
-- Each run writes to `data_path/{name}_{model}_g{...}_N{...}/` and stores eigenvalues, correlators, and checkpoints as `evals.dat`, `corrs.dat`, and `checkpoint.pt` inside that directory.
+- Each run writes to `data_path/{name}_{model}_g{...}_N{...}/` and stores eigenvalues, correlators, checkpoints, and configuration metadata as `evals.npz`, `corrs.npz`, `checkpoint.pt`, and `metadata.json` inside that directory.
 
 ## Code structure
 
