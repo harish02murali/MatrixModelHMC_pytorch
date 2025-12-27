@@ -6,7 +6,10 @@ import torch
 from typing import Optional
 import numpy as np
 
-from . import config
+try:
+    from pIKKT4D import config
+except ImportError:  # pragma: no cover
+    import config  # type: ignore
 
 # Caches keyed by (size, device, dtype) to avoid repeated allocations.
 _traceless_cache: dict[tuple[int, str, Optional[int], torch.dtype], tuple[torch.Tensor, torch.Tensor]] = {}

@@ -1,4 +1,4 @@
-"""Model-agnostic Hybrid Monte Carlo kernels: force, leapfrog, and Metropolis step."""
+"""Model-agnostic Hybrid Monte Carlo kernels: leapfrog and Metropolis step."""
 
 import math
 import random
@@ -6,7 +6,10 @@ from dataclasses import dataclass, replace
 from typing import Any
 import torch
 
-from .algebra import dagger, random_hermitian
+try:
+    from pIKKT4D.algebra import random_hermitian
+except ImportError:  # pragma: no cover
+    from algebra import random_hermitian  # type: ignore
 
 @dataclass
 class HMCParams:
@@ -14,21 +17,6 @@ class HMCParams:
     dt: float
     nsteps: int
     
-
-def force(X: torch.Tensor, model: Any) -> torch.Tensor:
-    """Compute the traceless Hermitian force dV/dX for a given potential."""
-    Y = X.detach().requires_grad_(True)
-    pot = model.potential(Y)
-    pot.backward()
-    res = Y.grad
-    if model.is_hermitian:
-        res = 0.5 * (res + dagger(res))
-    if model.is_traceless:
-        trs = torch.diagonal(res, dim1=-2, dim2=-1).sum(-1).real / model.ncol
-        eye = torch.eye(model.ncol, dtype=res.dtype, device=res.device)
-        res = res - trs[..., None, None] * eye
-    return res
-
 
 def hamil(X: torch.Tensor, mom_X: torch.Tensor, model: Any) -> float:
     """Total Hamiltonian = potential(X) + kinetic(momentum)."""
@@ -50,11 +38,11 @@ def leapfrog(X: torch.Tensor, hmc_params: HMCParams, model: Any) -> tuple[torch.
     X = X + 0.5 * dt_local * mom_X
 
     for _ in range(1, hmc_params.nsteps):
-        f_X = force(X, model)
+        f_X = model.force(X)
         mom_X = mom_X - dt_local * f_X
         X = X + dt_local * mom_X
 
-    f_X = force(X, model)
+    f_X = model.force(X)
     mom_X = mom_X - dt_local * f_X
     X = X + 0.5 * dt_local * mom_X
 
@@ -97,7 +85,6 @@ def thermalize(model: Any, hmc_params: HMCParams, steps: int = 10) -> None:
 
 __all__ = [
     "HMCParams",
-    "force",
     "hamil",
     "leapfrog",
     "update",

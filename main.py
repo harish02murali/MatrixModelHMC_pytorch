@@ -26,19 +26,34 @@ import numpy as np
 import torch
 
 # Support both package and script execution
-if __package__:
-    from . import config
-    from .hmc import HMCParams, update, thermalize
-    from .models import MatrixModel, build_model
-    from .cli import parse_args, DEFAULT_DATA_PATH, DEFAULT_PROFILE
-else:
+if not __package__:
     # When executed as "python pIKKT4D/main.py"
-    print(str(Path(__file__).resolve().parent))
     sys.path.append(str(Path(__file__).resolve().parent.parent))
-    from pIKKT4D import config  # type: ignore
-    from pIKKT4D.hmc import HMCParams, update, thermalize  # type: ignore
-    from pIKKT4D.models import MatrixModel, build_model  # type: ignore
-    from pIKKT4D.cli import parse_args, DEFAULT_DATA_PATH, DEFAULT_PROFILE  # type: ignore
+
+try:
+    from pIKKT4D import config
+    from pIKKT4D.hmc import HMCParams, update, thermalize
+    from pIKKT4D.models import (
+        MatrixModel,
+        build_model,
+        PIKKTTypeIModel,
+        PIKKTTypeIIModel,
+        gammaMajorana,
+        gammaWeyl,
+    )
+    from pIKKT4D.cli import parse_args, DEFAULT_DATA_PATH, DEFAULT_PROFILE
+except ImportError:  # pragma: no cover
+    import config  # type: ignore
+    from hmc import HMCParams, update, thermalize  # type: ignore
+    from models import (  # type: ignore
+        MatrixModel,
+        build_model,
+        PIKKTTypeIModel,
+        PIKKTTypeIIModel,
+        gammaMajorana,
+        gammaWeyl,
+    )
+    from cli import parse_args, DEFAULT_DATA_PATH, DEFAULT_PROFILE  # type: ignore
 
 
 DATA_PATH = DEFAULT_DATA_PATH

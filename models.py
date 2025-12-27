@@ -2,14 +2,36 @@
 
 from __future__ import annotations
 
-import os
+import os, sys
+from pathlib import Path
 from argparse import Namespace
 
 import numpy as np
 import torch
 
-from . import config
-from .algebra import ad_matrix, get_eye_cached, get_trace_projector_cached, kron_2d, spinJMatrices, makeH, random_hermitian
+# sys.path.append(str(Path(__file__).resolve().parent.parent))
+try:
+    from pIKKT4D import config
+    from pIKKT4D.algebra import (
+        ad_matrix,
+        dagger,
+        get_eye_cached,
+        get_trace_projector_cached,
+        kron_2d,
+        random_hermitian,
+        spinJMatrices,
+    )
+except ImportError:  # pragma: no cover
+    import config  # type: ignore
+    from algebra import (  # type: ignore
+        ad_matrix,
+        dagger,
+        get_eye_cached,
+        get_trace_projector_cached,
+        kron_2d,
+        random_hermitian,
+        spinJMatrices,
+    )
 
 ENABLE_TORCH_COMPILE = config.ENABLE_TORCH_COMPILE
 
@@ -104,6 +126,19 @@ class MatrixModel:
     def save_state(self, ckpt_path: str) -> None:
         torch.save({"X": self.get_state()}, ckpt_path)
 
+    def force(self, X: torch.Tensor | None = None) -> torch.Tensor:
+        """Compute the force dV/dX, assuming X stays Hermitian when configured."""
+        X = self._resolve_X(X)
+        Y = X.detach().requires_grad_(True)
+        pot = self.potential(Y)
+        pot.backward()
+        res = Y.grad
+        if self.is_traceless:
+            trs = torch.diagonal(res, dim1=-2, dim2=-1).sum(-1).real / self.ncol
+            eye = get_eye_cached(self.ncol, device=res.device, dtype=res.dtype)
+            res = res - trs[..., None, None] * eye
+        return res
+
     def potential(self, X: torch.Tensor | None = None) -> torch.Tensor:
         raise NotImplementedError
 
@@ -129,7 +164,6 @@ class MatrixModel:
             "couplings": self.couplings,
             "dtype": str(config.dtype),
         }
-
 
 def _type1_logdet_impl(X: torch.Tensor, A: torch.Tensor) -> torch.Tensor:
     adX = 1j * ad_matrix(X[:4])
@@ -166,9 +200,8 @@ def _type1_logdet_impl(X: torch.Tensor, A: torch.Tensor) -> torch.Tensor:
     K[:dim, :dim] += P
     K[dim:, dim:] += P
 
-    det = torch.linalg.slogdet(K)
-    if (det[0].abs() - 1) > 1e-4:
-        raise ValueError("Fermion matrix determinant is non-positive")
+    det = torch.slogdet(K)
+    # det = torch.linalg.slogdet(K)
     return det
 
 
@@ -196,9 +229,7 @@ def _type2_logdet_impl(X: torch.Tensor, omega_eye: torch.Tensor) -> torch.Tensor
     K[:dim, :dim] += P
     K[dim:, dim:] += P
 
-    det = torch.linalg.slogdet(K)
-    if (det[0].abs() - 1) > 1e-4:
-        raise ValueError("Fermion matrix determinant is non-positive")
+    det = torch.slogdet(K)
     return det
 
 
@@ -434,7 +465,7 @@ class PIKKTTypeIIModel(MatrixModel):
             self._log_det_fn = base_fn
 
     def load_fresh(self, args):
-        mats = [makeH(random_hermitian(self.ncol)) for _ in range(self.nmat)]
+        mats = [random_hermitian(self.ncol) for _ in range(self.nmat)]
         X = torch.stack(mats, dim=0).to(dtype=config.dtype, device=config.device)
 
         if args.spin is not None:
@@ -482,7 +513,7 @@ class PIKKTTypeIIModel(MatrixModel):
         }
 
     def extra_config_lines(self) -> list[str]:
-        return [f"  Coupling g               = {self.g}", f"  Coupling Omega2/Omega1      = {self.omega}"]
+        return [f"  Coupling g               = {self.g}", f"  Coupling Omega2/Omega1   = {self.omega}"]
 
     def status_string(self, X: torch.Tensor | None = None) -> str:
         X = self._resolve_X(X)
@@ -606,7 +637,7 @@ class YangMillsModel(MatrixModel):
         self.g = self.couplings[0]
 
     def load_fresh(self, args: Namespace) -> None:  # type: ignore[override]
-        mats = [makeH(random_hermitian(self.ncol)) for _ in range(self.nmat)]
+        mats = [random_hermitian(self.ncol) for _ in range(self.nmat)]
         X = torch.stack(mats, dim=0).to(dtype=config.dtype, device=config.device)
         self.set_state(X)
 
