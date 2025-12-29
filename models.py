@@ -20,6 +20,7 @@ try:
         kron_2d,
         random_hermitian,
         spinJMatrices,
+        makeH,
     )
 except ImportError:  # pragma: no cover
     import config  # type: ignore
@@ -133,6 +134,8 @@ class MatrixModel:
         pot = self.potential(Y)
         pot.backward()
         res = Y.grad
+        if self.is_hermitian:
+            res = makeH(res)
         if self.is_traceless:
             trs = torch.diagonal(res, dim1=-2, dim2=-1).sum(-1).real / self.ncol
             eye = get_eye_cached(self.ncol, device=res.device, dtype=res.dtype)
@@ -387,7 +390,7 @@ class PIKKTTypeIModel(MatrixModel):
         self.set_state(X)
 
     def potential(self, X: torch.Tensor | None = None) -> torch.Tensor:
-        X = self._resolve_X(X)
+        X = self._resolve_X(X) + self.X0
         bos = -0.5 * _commutator_action_sum(X)
         trace_sq = torch.einsum("bij,bji->", X, X)
         bos = bos + trace_sq
@@ -475,7 +478,7 @@ class PIKKTTypeIIModel(MatrixModel):
             for i in range(3):
                 X[i][:ntimes * J_matrices.shape[1], :ntimes * J_matrices.shape[1]] = (2 / 3 + self.omega) * torch.kron(eye_nt, J_matrices[i])
             X[3] = torch.zeros_like(X[3])
-        
+
         self.set_state(X)
 
     def potential(self, X: torch.Tensor | None = None) -> torch.Tensor:

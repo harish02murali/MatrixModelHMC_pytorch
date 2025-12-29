@@ -16,9 +16,9 @@ import datetime
 import json
 import os
 import pstats
-import shutil
 import sys
 import time
+import shutil
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -73,8 +73,8 @@ def ensure_output_slots(paths: Iterable[str], force: bool, allow_existing: bool 
             os.remove(path)
 
 
-def prepare_matrix_snapshot_dir(run_dir: str, *, force: bool, allow_existing: bool) -> str:
-    """Create (or reset) the directory for saving raw matrices."""
+def prepare_matrix_snapshot_dir(run_dir: str, *, force: bool, allow_existing: bool) -> tuple[str, int]:
+    """Return the directory and current max index for raw matrix snapshots."""
     target = os.path.join(run_dir, "all_mats")
     if os.path.exists(target):
         if force:
@@ -84,7 +84,19 @@ def prepare_matrix_snapshot_dir(run_dir: str, *, force: bool, allow_existing: bo
                 f"Matrix snapshot directory {target} already exists. Use --force or --resume appropriately."
             )
     os.makedirs(target, exist_ok=True)
-    return target
+    max_end = 0
+    if allow_existing:
+        for name in os.listdir(target):
+            if not name.endswith(".npy"):
+                continue
+            base = name[:-4]
+            if "_" not in base:
+                continue
+            start_str, end_str = base.split("_", 1)
+            if not (start_str.isdigit() and end_str.isdigit()):
+                continue
+            max_end = max(max_end, int(end_str))
+    return target, max_end
 
 
 def maybe_profile(enabled: bool):
@@ -127,11 +139,18 @@ def save_buffers(ev_buf: list[np.ndarray], corr_buf: list[np.ndarray], paths: di
         corr_buf.clear()
 
 
-def save_matrix_snapshot(model: MatrixModel, directory: str, iteration: int) -> None:
-    """Persist the full matrix configuration for debugging/analysis."""
-    state = model.get_state().detach().cpu().numpy()
-    filename = os.path.join(directory, f"{iteration}.npz")
-    np.savez(filename, X=state)
+def create_matrix_snapshot_chunk(
+    directory: str,
+    *,
+    start: int,
+    count: int,
+    dtype: np.dtype,
+    shape_tail: tuple[int, ...],
+) -> np.memmap:
+    """Create a memmap file for a chunk of snapshots."""
+    end = start + count - 1
+    filename = os.path.join(directory, f"{start:08d}_{end:08d}.npy")
+    return np.lib.format.open_memmap(filename, mode="w+", dtype=dtype, shape=(count, *shape_tail))
 
 
 def seed_everything(seed: int | None) -> None:
@@ -176,9 +195,6 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
     os.makedirs(paths["dir"], exist_ok=True)
     allow_existing = args.resume and not args.fresh
     ensure_output_slots([paths["eigs"], paths["corrs"]], force=args.force, allow_existing=allow_existing)
-    matrix_snapshot_dir = None
-    if args.saveAllMats:
-        matrix_snapshot_dir = prepare_matrix_snapshot_dir(paths["dir"], force=args.force, allow_existing=allow_existing)
     write_run_metadata(paths["meta"], model, args)
 
     print("\n------------------------------------------------")
@@ -204,7 +220,6 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
     seed_everything(args.seed)
     profiler = maybe_profile(args.profile)
 
-    # model.initialize_fields(args.spin)
     resumed = model.initialize_configuration(args, paths["ckpt"])
 
     if not resumed:
@@ -214,27 +229,59 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
     acc_count = 0
     ev_X_buf: list[np.ndarray] = []
     corr_buf: list[np.ndarray] = []
+    matrix_snapshot_dir = None
+    matrix_snapshot_offset = 0
+    chunk: np.memmap | None = None
+    chunk_start = 0
+    chunk_size = args.save_every
+    if args.saveAllMats:
+        matrix_snapshot_dir, matrix_snapshot_offset = prepare_matrix_snapshot_dir(
+            paths["dir"], force=args.force, allow_existing=allow_existing
+        )
+        state_shape = model.get_state().shape
+        state_dtype = np.dtype(model.get_state().detach().cpu().numpy().dtype)
 
-    for MDTU in range(1, args.niters + 1):
+    for iter in range(1, args.niters + 1):
         acc_count = update(acc_count, hmc_params, model)
+        if matrix_snapshot_dir is not None:
+            global_iter = matrix_snapshot_offset + iter
+            if chunk is None or (global_iter - 1) % chunk_size == 0:
+                if chunk is not None:
+                    chunk.flush()
+                chunk_start = global_iter
+                remaining = args.niters - iter + 1
+                chunk = create_matrix_snapshot_chunk(
+                    matrix_snapshot_dir,
+                    start=chunk_start,
+                    count=min(chunk_size, remaining),
+                    dtype=state_dtype,
+                    shape_tail=state_shape,
+                )
+            state = model.get_state().detach()
+            if state.device.type != "cpu":
+                state = state.to("cpu")
+            chunk[global_iter - chunk_start] = state.numpy()
 
         eigs, corrs = model.measure_observables()
         ev_X_buf.append(np.stack(eigs))
         if corrs is not None:
             corr_buf.append(corrs)
 
-        if MDTU % args.save_every == 0:
+        if iter % args.save_every == 0:
             save_buffers(ev_X_buf, corr_buf, paths)
-            if matrix_snapshot_dir is not None:
-                save_matrix_snapshot(model, matrix_snapshot_dir, MDTU)
+            if chunk is not None:
+                chunk.flush()
             status_string = model.status_string()
-            print(f"Iteration {MDTU}, Acceptance rate so far = {acc_count/MDTU:.3f}, " + status_string)
+            print(f"Iteration {iter}, Acceptance rate so far = {acc_count/iter:.3f}, " + status_string)
             if args.save:
                 print(f"Saving configuration to {paths['ckpt']}")
                 model.save_state(paths["ckpt"])
 
     if acc_count / max(args.niters, 1) < 0.5:
         print("WARNING: Acceptance rate is below 50%")
+
+    if chunk is not None:
+        chunk.flush()
 
     stop_and_report_profile(profiler)
     return model.get_state()
