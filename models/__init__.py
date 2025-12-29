@@ -45,6 +45,8 @@ def build_model(args: Namespace) -> MatrixModel:
             rhmc_lambda_max=args.rhmc_lambda_max,
             rhmc_degree=args.rhmc_degree,
             rhmc_samples=args.rhmc_samples,
+            rhmc_cg_tol=args.rhmc_cg_tol,
+            rhmc_cg_maxiter=args.rhmc_cg_maxiter,
         )
     if model_name == "yangmills":
         return YangMillsModel(

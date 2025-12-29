@@ -65,8 +65,10 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     rhmc_group.add_argument("--rhmc-lambda-min", type=float, default=None, help="Lower spectral bound for K^dagger K")
     rhmc_group.add_argument("--rhmc-lambda-max", type=float, default=None, help="Upper spectral bound for K^dagger K")
-    rhmc_group.add_argument("--rhmc-degree", type=int, default=8, help="Number of poles in the RHMC rational fit")
+    rhmc_group.add_argument("--rhmc-degree", type=int, default=14, help="Number of poles in the RHMC rational fit")
     rhmc_group.add_argument("--rhmc-samples", type=int, default=200, help="Sample points used to fit RHMC coefficients")
+    rhmc_group.add_argument("--rhmc-cg-tol", type=float, default=1e-8, help="Relative residual tolerance for RHMC CG solves")
+    rhmc_group.add_argument("--rhmc-cg-maxiter", type=int, default=500, help="Max iterations for RHMC CG solves")
     args = parser.parse_args(argv)
     validate_args(args)
     return args
@@ -101,6 +103,10 @@ def validate_args(args: argparse.Namespace) -> None:
             raise ValueError("--rhmc-degree must be positive")
         if args.rhmc_samples < args.rhmc_degree + 1:
             raise ValueError("--rhmc-samples must be at least rhmc-degree + 1")
+        if args.rhmc_cg_tol <= 0:
+            raise ValueError("--rhmc-cg-tol must be positive")
+        if args.rhmc_cg_maxiter < 1:
+            raise ValueError("--rhmc-cg-maxiter must be positive")
     if model_lower == "yangmills":
         if len(args.coupling) != 1:
             raise ValueError("Yang-Mills model requires a single coupling g via --coupling g")

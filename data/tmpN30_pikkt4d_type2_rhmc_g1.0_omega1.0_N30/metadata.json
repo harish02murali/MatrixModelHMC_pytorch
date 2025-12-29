@@ -1,0 +1,35 @@
+{
+  "model": {
+    "model_key": "pikkt4d_type2_rhmc",
+    "display_name": "pIKKT Type II (RHMC)",
+    "nmat": 4,
+    "ncol": 30,
+    "couplings": [
+      1.0,
+      1.0
+    ],
+    "dtype": "torch.complex128",
+    "no_myers": false,
+    "has_source": false,
+    "model_variant": "type2_rhmc",
+    "rhmc_degree": 10,
+    "rhmc_lambda_min": 0.673,
+    "rhmc_lambda_max": 1102.0,
+    "rhmc_samples": 200,
+    "rhmc_cg_tol": 1e-10,
+    "rhmc_cg_maxiter": 500
+  },
+  "cli": {
+    "name": "tmpN30",
+    "data_path": "data",
+    "niters": 2,
+    "step_size": 0.08,
+    "nsteps": 200,
+    "save_every": 10,
+    "save_all_mats": false,
+    "fresh": false,
+    "resume": false,
+    "seed": null,
+    "timestamp": "2025-12-29T01:40:44.360590"
+  }
+}
