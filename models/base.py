@@ -87,6 +87,10 @@ class MatrixModel:
     def build_paths(self, name_prefix: str, data_path: str) -> dict[str, str]:
         raise NotImplementedError
 
+    def refresh_aux_fields(self) -> None:
+        """Optional hook to refresh auxiliary fields (e.g., pseudofermions)."""
+        return None
+
     def extra_config_lines(self) -> list[str]:
         """Optional human-readable configuration lines for logging."""
         return []

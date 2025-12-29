@@ -21,9 +21,9 @@ S_{D=4,\text{type II}}=\frac{1}{g}\text{Tr}\Bigl[&-\frac14 [X_I,X_J]^2 -\frac{i}
 \end{aligned}
 $$
 
-In this codebase the couplings and mass-deformation choice are set via the CLI flags `--coupling` and `--model`. Use `--model pikkt4d_type1` for the Type I deformation (pass a single value to `--coupling`, interpreted as $g$) and `--model pikkt4d_type2` for Type II (two values to `--coupling`: first $g$, second $\omega$). A generic $D$-dimensional Yang-Mills model is also available via `--model yangmills`, where you can set the dimension with `--nmat`. You can register additional models in the `models/` package and select them at runtime via `--model`.
+In this codebase the couplings and mass-deformation choice are set via the CLI flags `--coupling` and `--model`. Use `--model pikkt4d_type1` for the Type I deformation (pass a single value to `--coupling`, interpreted as $g$) and `--model pikkt4d_type2` for Type II (two values to `--coupling`: first $g$, second $\omega$). For Type II with RHMC pseudofermions, use `--model pikkt4d_type2_rhmc` and supply the spectral bounds via `--rhmc-lambda-min`/`--rhmc-lambda-max`. A generic $D$-dimensional Yang-Mills model is also available via `--model yangmills`, where you can set the dimension with `--nmat`. You can register additional models in the `models/` package and select them at runtime via `--model`.
 
-Fermion determinants are evaluated via the reduced Majorana/Weyl matrices in `models/utils.py`. 
+Fermion determinants are evaluated via the reduced Majorana/Weyl matrices in `models/utils.py`, and the RHMC model uses pseudofermions to approximate the determinant.
 
 The package also includes a generic $D$-dimensional Yang-Mills matrix model (choose `--model yangmills`), whose action is $\frac{N}{g} \left(\sum_i \operatorname{Tr}(X_i^2) - \frac14\sum_{ij} \operatorname{Tr}([X_i,X_j]^2)\right)$.
 
@@ -45,6 +45,12 @@ Type II with $N=10,\ \omega = 1$ and $g=100$ (note the double entry for `--coupl
 
 ```bash
 python main.py --model pikkt4d_type2 --ncol 10 --niters 300 --coupling 100.0 1.0 --fresh --name myRunName --data-path outputs
+```
+
+$D=4$ Type II with RHMC pseudofermions (supply spectral bounds for $K^\dagger K$):
+
+```bash
+python main.py --model pikkt4d_type2_rhmc --ncol 10 --niters 300 --coupling 100.0 1.0 --rhmc-lambda-min 1e-3 --rhmc-lambda-max 10.0 --fresh --name myRunName --data-path outputs
 ```
 
 $D$-dimensional Yang-Mills with $D=6$, $N=12$, and $g=50$:
@@ -69,8 +75,9 @@ Key flags (see `cli.py` for defaults):
 - `--save`, `--save-every`: checkpoint cadence.
 - `--data-path`: directory for outputs/checkpoints.
 - `--seed`: RNG seed for deterministic runs.
-- `--nmat`: number of matrices (dimension), overwritten for `--model pikkt4d_type2` and `--model pikkt4d_type1`.
-- **Type II options** (only meaningful when `--model pikkt4d_type2`): `--spin` (optional fuzzy-sphere background) and `--no-myers` (disable the Myers term).
+- `--nmat`: number of matrices (dimension), overwritten for `--model pikkt4d_type2`, `--model pikkt4d_type2_rhmc`, and `--model pikkt4d_type1`.
+- **Type II options** (only meaningful when `--model pikkt4d_type2` or `--model pikkt4d_type2_rhmc`): `--spin` (optional fuzzy-sphere background) and `--no-myers` (disable the Myers term).
+- **RHMC options** (only meaningful when `--model pikkt4d_type2_rhmc`): `--rhmc-lambda-min`, `--rhmc-lambda-max`, `--rhmc-degree`, `--rhmc-samples`.
 
 Outputs:
 - Each run writes to `data_path/{name}_{model}_g{...}_N{...}/` and stores eigenvalues, correlators, checkpoints, and configuration metadata as `evals.npz`, `corrs.npz`, `checkpoint.pt`, and `metadata.json` inside that directory.
