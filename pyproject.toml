@@ -11,6 +11,5 @@ requires-python = ">=3.9"
 dependencies = ["numpy", "torch"]
 
 [tool.setuptools]
-packages = ["pIKKT4D"]
+packages = ["pIKKT4D", "pIKKT4D.models"]
 package-dir = { pIKKT4D = "." }
-

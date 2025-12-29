@@ -25,7 +25,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         description="Choosing the matrix model and simulation parameters.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--model", type=str, required=True, help="Matrix model name registered in models.py (e.g., 1mm, pikkt4d_type1, pikkt4d_type2, yangmills)")
+    parser.add_argument(
+        "--model",
+        type=str,
+        required=True,
+        help="Matrix model name registered in the models package (e.g., 1mm, pikkt4d_type1, pikkt4d_type2, yangmills)",
+    )
     parser.add_argument("--resume", action="store_true", help="Load a checkpoint if present")
     parser.add_argument("--fresh", action="store_true", help="Ignore checkpoints and start from zero fields")
     parser.add_argument("--save", action="store_true", help="Save configurations every --save-every trajectories")

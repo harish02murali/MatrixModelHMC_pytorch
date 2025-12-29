@@ -1,6 +1,6 @@
 # pIKKT4D Hybrid Monte Carlo
 
-Python/Torch implementation of Hybrid Monte Carlo for the polarized $D=4$ IKKT (IIB) matrix model (see [A. Martina, arXiv:2507.17813](https://arxiv.org/pdf/2507.17813)). The code cleanly separates the model-specific action and observables (`models.py`) from the HMC integrator (`hmc.py`).
+Python/Torch implementation of Hybrid Monte Carlo for the polarized $D=4$ IKKT (IIB) matrix model (see [A. Martina, arXiv:2507.17813](https://arxiv.org/pdf/2507.17813)). The code cleanly separates the model-specific action and observables (the `models/` package) from the HMC integrator (`hmc.py`).
 
 ## Model
 
@@ -21,9 +21,9 @@ S_{D=4,\text{type II}}=\frac{1}{g}\text{Tr}\Bigl[&-\frac14 [X_I,X_J]^2 -\frac{i}
 \end{aligned}
 $$
 
-In this codebase the couplings and mass-deformation choice are set via the CLI flags `--coupling` and `--model`. Use `--model pikkt4d_type1` for the Type I deformation (pass a single value to `--coupling`, interpreted as $g$) and `--model pikkt4d_type2` for Type II (two values to `--coupling`: first $g$, second $\omega$). A generic $D$-dimensional Yang-Mills model is also available via `--model yangmills`, where you can set the dimension with `--nmat`. You can register additional models in `models.py` and select them at runtime via `--model`.
+In this codebase the couplings and mass-deformation choice are set via the CLI flags `--coupling` and `--model`. Use `--model pikkt4d_type1` for the Type I deformation (pass a single value to `--coupling`, interpreted as $g$) and `--model pikkt4d_type2` for Type II (two values to `--coupling`: first $g$, second $\omega$). A generic $D$-dimensional Yang-Mills model is also available via `--model yangmills`, where you can set the dimension with `--nmat`. You can register additional models in the `models/` package and select them at runtime via `--model`.
 
-Fermion determinants are evaluated via the reduced Majorana/Weyl matrices in `models.py`. 
+Fermion determinants are evaluated via the reduced Majorana/Weyl matrices in `models/utils.py`. 
 
 The package also includes a generic $D$-dimensional Yang-Mills matrix model (choose `--model yangmills`), whose action is $\frac{N}{g} \left(\sum_i \operatorname{Tr}(X_i^2) - \frac14\sum_{ij} \operatorname{Tr}([X_i,X_j]^2)\right)$.
 
@@ -79,6 +79,6 @@ Outputs:
 
 - `main.py` — CLI entry point, I/O, thermalization, and trajectory loop.
 - `cli.py` — argument parsing and validation.
-- `models.py` — action, fermion determinants, observables, spin backgrounds.
+- `models/` — action, fermion determinants, observables, spin backgrounds (one file per model).
 - `hmc.py` — model-agnostic leapfrog integrator and Metropolis step.
 - `algebra.py` — Hermitian/traceless projections and adjoint actions.  

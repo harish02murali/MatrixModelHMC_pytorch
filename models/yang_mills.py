@@ -1,0 +1,81 @@
+"""D-dimensional Yang-Mills matrix model."""
+
+from __future__ import annotations
+
+import os
+
+import numpy as np
+import torch
+
+from pIKKT4D import config
+from pIKKT4D.algebra import random_hermitian
+from pIKKT4D.models.base import MatrixModel
+from pIKKT4D.models.utils import _commutator_action_sum
+
+
+class YangMillsModel(MatrixModel):
+    """D-dimensional Yang-Mills matrix model."""
+
+    model_name = "yangmills"
+
+    def __init__(self, dim: int, ncol: int, couplings: list, source: np.ndarray | None = None) -> None:
+        super().__init__(name=f"{dim}D Yang-Mills", nmat=dim, ncol=ncol)
+        self.source = torch.diag(torch.tensor(source, device=config.device, dtype=config.dtype)) if source is not None else None
+        self.couplings = couplings
+        self.is_hermitian = True
+        self.is_traceless = True
+        self.g = self.couplings[0]
+
+    def load_fresh(self, args):
+        mats = [random_hermitian(self.ncol) for _ in range(self.nmat)]
+        X = torch.stack(mats, dim=0).to(dtype=config.dtype, device=config.device)
+        self.set_state(X)
+
+    def potential(self, X: torch.Tensor | None = None) -> torch.Tensor:
+        X = self._resolve_X(X)
+        trace_sq = torch.einsum("bij,bji->", X, X).real
+        mass_term = trace_sq
+        comm_term = -0.5 * _commutator_action_sum(X).real
+        src = torch.tensor(0.0, dtype=X.dtype, device=X.device)
+        if self.source is not None:
+            src = -(self.ncol / np.sqrt(self.g)) * torch.trace(self.source @ X[0])
+        return (self.ncol / self.g) * (mass_term + comm_term) + src.real
+
+    def measure_observables(self, X: torch.Tensor | None = None):
+        X = self._resolve_X(X)
+        eigs = [torch.linalg.eigvalsh(mat).cpu().numpy() for mat in X]
+        trace_sq = (torch.einsum("bij,bji->", X, X).real * self.ncol).item()
+        comm_raw = _commutator_action_sum(X).real.item()
+        corrs = np.array([trace_sq, comm_raw], dtype=np.float64)
+        return eigs, corrs
+
+    def build_paths(self, name_prefix: str, data_path: str) -> dict[str, str]:
+        run_dir = os.path.join(
+            data_path,
+            f"{name_prefix}_{self.model_name}_D{self.nmat}_g{round(self.g, 4)}_N{self.ncol}",
+        )
+        return {
+            "dir": run_dir,
+            "eigs": os.path.join(run_dir, "evals.npz"),
+            "corrs": os.path.join(run_dir, "corrs.npz"),
+            "meta": os.path.join(run_dir, "metadata.json"),
+            "ckpt": os.path.join(run_dir, "checkpoint.pt"),
+        }
+
+    def status_string(self, X: torch.Tensor | None = None) -> str:
+        X = self._resolve_X(X)
+        avg_tr = (torch.einsum("bij,bji->", X, X).real / (self.nmat * self.ncol)).item()
+        return f"trX_i^2 = {avg_tr:.5f}. "
+
+    def extra_config_lines(self) -> list[str]:
+        return [f"Coupling g               = {self.g}", f"Dimension D             = {self.nmat}"]
+
+    def run_metadata(self) -> dict[str, object]:
+        meta = super().run_metadata()
+        meta.update(
+            {
+                "has_source": self.source is not None,
+                "model_variant": "yangmills",
+            }
+        )
+        return meta
