@@ -9,8 +9,10 @@ import torch
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
 # Environment toggles mirror the original script.
-ALLOW_TF32 = os.getenv("IKKT_ALLOW_TF32", "1") == "1"
-ENABLE_TORCH_COMPILE = os.getenv("IKKT_COMPILE", "0") == "1"
+# ALLOW_TF32 = os.getenv("IKKT_ALLOW_TF32", "1") == "1"
+# ENABLE_TORCH_COMPILE = os.getenv("IKKT_COMPILE", "0") == "1"
+ALLOW_TF32 = True
+ENABLE_TORCH_COMPILE = False
 
 def _real_dtype_for(complex_dtype: torch.dtype) -> torch.dtype:
     return torch.float32 if complex_dtype == torch.complex64 else torch.float64

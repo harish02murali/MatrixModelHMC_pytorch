@@ -61,8 +61,8 @@ def update(acc_count: int, hmc_params: HMCParams, model: Any, reject_prob: float
     accept = True
     if reject_prob > 0.0:
         r = random.uniform(0.0, reject_prob)
-        if math.exp(-dH) < r:
-            accept = False
+        if dH > 0.0:
+            accept = (-dH) > math.log(r)
 
     if accept:
         model.set_state(X_new)

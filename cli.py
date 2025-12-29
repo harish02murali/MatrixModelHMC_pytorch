@@ -31,7 +31,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         required=True,
         help=(
             "Matrix model name registered in the models package (e.g., 1mm, "
-            "pikkt4d_type1, pikkt4d_type2, pikkt4d_type2_rhmc, yangmills)"
+            "pikkt4d_type1, pikkt4d_type2, yangmills)"
         ),
     )
     parser.add_argument("--resume", action="store_true", help="Load a checkpoint if present")
@@ -56,17 +56,9 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="Print resolved configuration and exit")
     parser.add_argument("--source", type=_parse_source, default=None, help="Numpy expression for source, e.g., np.linspace(-1,1,20)")
     type2_group = parser.add_argument_group(
-        "Type II options", "Only relevant when --model pikkt4d_type2 or pikkt4d_type2_rhmc is selected"
+        "Type II options", "Only relevant when --model pikkt4d_type2 is selected"
     )
     type2_group.add_argument("--spin", type=float, default=None, help="Spin for the fuzzy sphere background")
-    type2_group.add_argument("--no-myers", action="store_true", help="Disable the Myers term in the Type II action")
-    rhmc_group = parser.add_argument_group(
-        "RHMC options", "Only relevant when --model pikkt4d_type2_rhmc is selected"
-    )
-    rhmc_group.add_argument("--rhmc-lambda-min", type=float, default=None, help="Lower spectral bound for K^dagger K")
-    rhmc_group.add_argument("--rhmc-lambda-max", type=float, default=None, help="Upper spectral bound for K^dagger K")
-    rhmc_group.add_argument("--rhmc-degree", type=int, default=8, help="Number of poles in the RHMC rational fit")
-    rhmc_group.add_argument("--rhmc-samples", type=int, default=200, help="Sample points used to fit RHMC coefficients")
     args = parser.parse_args(argv)
     validate_args(args)
     return args
@@ -88,19 +80,6 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("pIKKT Type I requires exactly one coupling g via --coupling g")
     if model_lower == "pikkt4d_type2" and len(args.coupling) != 2:
         raise ValueError("pIKKT Type II requires exactly two couplings via --coupling g omega")
-    if model_lower == "pikkt4d_type2_rhmc":
-        if len(args.coupling) != 2:
-            raise ValueError("pIKKT Type II RHMC requires exactly two couplings via --coupling g omega")
-        if args.rhmc_lambda_min is None or args.rhmc_lambda_max is None:
-            raise ValueError("--rhmc-lambda-min and --rhmc-lambda-max must be provided for RHMC")
-        if args.rhmc_lambda_min <= 0 or args.rhmc_lambda_max <= 0:
-            raise ValueError("RHMC spectral bounds must be positive")
-        if args.rhmc_lambda_min >= args.rhmc_lambda_max:
-            raise ValueError("--rhmc-lambda-min must be smaller than --rhmc-lambda-max")
-        if args.rhmc_degree < 1:
-            raise ValueError("--rhmc-degree must be positive")
-        if args.rhmc_samples < args.rhmc_degree + 1:
-            raise ValueError("--rhmc-samples must be at least rhmc-degree + 1")
     if model_lower == "yangmills":
         if len(args.coupling) != 1:
             raise ValueError("Yang-Mills model requires a single coupling g via --coupling g")
