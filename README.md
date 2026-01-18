@@ -23,7 +23,7 @@ $$
 
 In this codebase the couplings and mass-deformation choice are set via the CLI flags `--coupling` and `--model`. Use `--model pikkt4d_type1` for the Type I deformation (pass a single value to `--coupling`, interpreted as $g$) and `--model pikkt4d_type2` for Type II (two values to `--coupling`: first $g$, second $\omega$). A generic $D$-dimensional Yang-Mills model is also available via `--model yangmills`, where you can set the dimension with `--nmat`. You can register additional models in the `models/` package and select them at runtime via `--model`.
 
-The package also includes a generic $D$-dimensional Yang-Mills matrix model (choose `--model yangmills`), whose action is $\frac{N}{g} \left(\sum_i \operatorname{Tr}(X_i^2) - \frac14\sum_{ij} \operatorname{Tr}([X_i,X_j]^2)\right)$.
+The package also includes a generic $D$-dimensional Yang-Mills matrix model (choose `--model yangmills`), whose action is $\frac{N}{g} \left(\sum_i \text{Tr}(X_i^2) - \frac14\sum_{ij} \text{Tr}([X_i,X_j]^2)\right)$.
 
 ## Setup
 

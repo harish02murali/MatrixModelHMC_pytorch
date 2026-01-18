@@ -61,14 +61,13 @@ class PIKKTTypeIModel(MatrixModel):
     model_name = "pikkt4d_type1"
 
     def __init__(self, ncol: int, couplings: list, source: np.ndarray | None = None, no_myers: bool = False) -> None:
-        super().__init__(name="pIKKT Type I", nmat=4, ncol=ncol)
+        super().__init__(nmat=4, ncol=ncol)
         self.couplings = couplings
         self.g = self.couplings[0]
         self.source = torch.diag(torch.tensor(source, device=config.device, dtype=config.dtype)) if source is not None else None
         self.no_myers = no_myers
         self.is_hermitian = True
         self.is_traceless = True
-        self.model_key = "type1"
 
         dim_tr = self.ncol * self.ncol
         eye_tr = get_eye_cached(dim_tr, device=config.device, dtype=config.dtype)

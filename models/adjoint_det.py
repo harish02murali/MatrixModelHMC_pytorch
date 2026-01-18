@@ -25,7 +25,7 @@ class AdjointDetModel(MatrixModel):
     model_name = "adjoint_det"
 
     def __init__(self, dim: int, ncol: int, couplings: list, source: np.ndarray | None = None) -> None:
-        super().__init__(name=f"{dim}D AdjointDet", nmat=dim, ncol=ncol)
+        super().__init__(nmat=dim, ncol=ncol)
         self.source = torch.diag(torch.tensor(source, device=config.device, dtype=config.dtype)) if source is not None else None
         self.couplings = couplings
         self.g = self.couplings[0]

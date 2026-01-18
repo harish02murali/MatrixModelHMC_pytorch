@@ -20,16 +20,11 @@ class OneMatrixPolynomialModel(MatrixModel):
     def __init__(self, ncol: int, couplings: list) -> None:
         if len(couplings) == 0:
             raise ValueError("1MM model requires at least one coupling via --coupling t1 [t2 ...]")
-        super().__init__(name="1MM Polynomial", nmat=1, ncol=ncol)
+        super().__init__(nmat=1, ncol=ncol)
         self.couplings = couplings
-        self.model_key = "1mm"
         self.is_hermitian = True
         self.is_traceless = False
         self._coupling_tensor = torch.tensor(couplings, dtype=config.real_dtype, device=config.device)
-
-    def load_fresh(self, args: Namespace) -> None:  # type: ignore[override]
-        X = 2 * torch.eye(self.ncol, dtype=config.dtype, device=config.device).unsqueeze(0)
-        self.set_state(X)
 
     def potential(self, X: torch.Tensor | None = None) -> torch.Tensor:
         X = self._resolve_X(X)
@@ -42,7 +37,7 @@ class OneMatrixPolynomialModel(MatrixModel):
             total = total + coeff.type_as(trace_power) * trace_power
         return self.ncol * total
 
-    def measure_observables(self, X: torch.Tensor | None = None):
+    def measure_observables(self, X: torch.Tensor | None = None) -> tuple:
         with torch.no_grad():
             mat = self._resolve_X(X)[0]
             eigs = [torch.linalg.eigvalsh(mat).cpu().numpy()]
@@ -70,11 +65,6 @@ class OneMatrixPolynomialModel(MatrixModel):
     def extra_config_lines(self) -> list[str]:
         couplings_str = ", ".join(f"t_{i+1}={c}" for i, c in enumerate(self.couplings))
         return [f"  Couplings t_n            = {couplings_str}"]
-
-    def status_string(self, X: torch.Tensor | None = None) -> str:
-        mat = self._resolve_X(X)[0]
-        trX2 = (torch.trace(mat @ mat).real / self.ncol).item()
-        return f"trX^2 = {trX2:.5f}. "
 
     def run_metadata(self) -> dict[str, object]:
         meta = super().run_metadata()

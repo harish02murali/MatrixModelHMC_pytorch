@@ -29,7 +29,7 @@ class RunRecord:
         self.corrs = self._load_npz(path / "corrs.npz", empty=np.empty((0, 0), dtype=np.complex128)).real
         self.mats = self._load_chunks(path / "all_mats")
         model_info = self.metadata.get("model", {})
-        self.model_key = model_info.get("model_key")
+        self.model_name = model_info.get("model_name")
         self.nmat = model_info.get("nmat")
         self.ncol = model_info.get("ncol") or (self.evals.shape[-1] if self.evals.ndim == 3 else None)
         self.couplings = model_info.get("couplings", [])
@@ -78,7 +78,7 @@ class RunRecord:
         if self.evals.ndim < 2:
             return []
         count = self.evals.shape[1]
-        key = (self.model_key or "").lower()
+        key = (self.model_name or "").lower()
         if key in {"pikkt4d_type1", "pikkt4d_type2"}:
             defaults = ["X1", "X2", "X3", "X4", "X1+iX2", "X3+iX4", "Casimir"]
             return defaults[:count]

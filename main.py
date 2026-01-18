@@ -199,7 +199,7 @@ def run_simulation(args: argparse.Namespace) -> MatrixModel:
 
     print("\n------------------------------------------------")
     print("Configuration:")
-    print(f"  Model                    = {model.name}")
+    print(f"  Model                    = {model.model_name}")
     print(f"  Matrix size N            = {model.ncol}")
     print(f"  Number of Trajectories   = {args.niters}")
     for line in model.extra_config_lines():

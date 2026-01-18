@@ -36,7 +36,7 @@ class PIKKTTypeIIModel(MatrixModel):
     model_name = "pikkt4d_type2"
 
     def __init__(self, ncol: int, couplings: list, source: np.ndarray | None = None) -> None:
-        super().__init__(name="pIKKT Type II", nmat=4, ncol=ncol)
+        super().__init__(nmat=4, ncol=ncol)
         self.couplings = couplings
         self.g = self.couplings[0]
         self.omega = self.couplings[1]
@@ -47,7 +47,6 @@ class PIKKTTypeIIModel(MatrixModel):
         )
         self.is_hermitian = True
         self.is_traceless = True
-        self.model_key = "type2"
 
         dim_tr = self.ncol * self.ncol
         self._eye23 = (2 / 3) * get_eye_cached(

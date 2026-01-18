@@ -19,7 +19,7 @@ class YangMillsModel(MatrixModel):
     model_name = "yangmills"
 
     def __init__(self, dim: int, ncol: int, couplings: list, source: np.ndarray | None = None) -> None:
-        super().__init__(name=f"{dim}D Yang-Mills", nmat=dim, ncol=ncol)
+        super().__init__(nmat=dim, ncol=ncol)
         self.source = torch.diag(torch.tensor(source, device=config.device, dtype=config.dtype)) if source is not None else None
         self.couplings = couplings
         self.is_hermitian = True

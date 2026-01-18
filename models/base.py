@@ -14,8 +14,7 @@ from pIKKT4D.algebra import get_eye_cached, makeH
 class MatrixModel:
     """Base class for matrix models used with the HMC driver."""
 
-    def __init__(self, name: str, nmat: int, ncol: int) -> None:
-        self.name = name
+    def __init__(self, nmat: int, ncol: int) -> None:
         self.nmat = nmat
         self.ncol = ncol
         self.couplings = None
@@ -75,21 +74,30 @@ class MatrixModel:
             res = res - trs[..., None, None] * eye
         return res
 
+    def status_string(self, X: torch.Tensor | None = None) -> str:
+        X = self._resolve_X(X)
+        avg_tr = (torch.einsum("bij,bji->", X, X).real / (self.nmat * self.ncol)).item()
+        return f"trX_i^2 = {avg_tr:.5f}. "
+    
+    def build_paths(self, name_prefix: str, data_path: str) -> dict[str, str]:
+        model_name = getattr(self, "model_name", self.__class__.__name__.lower())
+        run_dir = os.path.join(
+            data_path,
+            f"{name_prefix}_{model_name}_D{self.nmat}_N{self.ncol}",
+        )
+        return {
+            "dir": run_dir,
+            "eigs": os.path.join(run_dir, "evals.npz"),
+            "corrs": os.path.join(run_dir, "corrs.npz"),
+            "meta": os.path.join(run_dir, "metadata.json"),
+            "ckpt": os.path.join(run_dir, "checkpoint.pt"),
+        }
+    
     def potential(self, X: torch.Tensor | None = None) -> torch.Tensor:
         raise NotImplementedError
 
-    def measure_observables(self, X: torch.Tensor | None = None):
+    def measure_observables(self, X: torch.Tensor | None = None) -> tuple:
         raise NotImplementedError
-
-    def status_string(self, X: torch.Tensor | None = None) -> str:
-        raise NotImplementedError
-
-    def build_paths(self, name_prefix: str, data_path: str) -> dict[str, str]:
-        raise NotImplementedError
-
-    def refresh_aux_fields(self) -> None:
-        """Optional hook to refresh auxiliary fields (e.g., pseudofermions)."""
-        return None
 
     def extra_config_lines(self) -> list[str]:
         """Optional human-readable configuration lines for logging."""
@@ -97,8 +105,7 @@ class MatrixModel:
 
     def run_metadata(self) -> dict[str, object]:
         return {
-            "model_key": getattr(self, "model_name", self.__class__.__name__.lower()),
-            "display_name": self.name,
+            "model_name": getattr(self, "model_name", self.__class__.__name__.lower()),
             "nmat": self.nmat,
             "ncol": self.ncol,
             "couplings": self.couplings,
