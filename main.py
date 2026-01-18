@@ -182,7 +182,7 @@ def write_run_metadata(path: str, model: MatrixModel, args: argparse.Namespace) 
         json.dump(summary, f, indent=2)
 
 
-def run_simulation(args: argparse.Namespace) -> torch.Tensor:
+def run_simulation(args: argparse.Namespace) -> MatrixModel:
     """Configure model/HMC parameters and execute the requested number of trajectories."""
     dt = args.step_size / args.nsteps
     model = build_model(args)
@@ -206,7 +206,7 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
         print(line)
     print(f"  Step size, Nsteps        = {args.step_size}, {hmc_params.nsteps} (dt = {hmc_params.dt})")
     print(f"  Save                     = {args.save}")
-    print(f"  outputs                  = {paths['eigs']}")
+    print(f"  outputs                  = {paths['dir']}")
     print(f"  device/dtype             = {config.device}/{config.dtype}")
     source = getattr(model, "source", None)
     if source is not None:
@@ -215,7 +215,7 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
 
     if args.dry_run:
         print("Dry run; resolved configuration:")
-        return
+        return model
 
     seed_everything(args.seed)
     profiler = maybe_profile(args.profile)
@@ -224,7 +224,7 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
 
     if not resumed:
         ensure_output_slots([paths["eigs"], paths["corrs"]], force=True)
-        thermalize(model, hmc_params)
+        # thermalize(model, hmc_params)
 
     acc_count = 0
     ev_X_buf: list[np.ndarray] = []
@@ -284,23 +284,30 @@ def run_simulation(args: argparse.Namespace) -> torch.Tensor:
         chunk.flush()
 
     stop_and_report_profile(profiler)
-    return model.get_state()
+    return model
 
 
-def main(argv: Sequence[str]) -> torch.Tensor:
-    start_time = time.time()
-    print("STARTED:", datetime.datetime.now().strftime("%d %B %Y %H:%M:%S"))
+# def main(argv: Sequence[str]):
+#     start_time = time.time()
+#     print("STARTED:", datetime.datetime.now().strftime("%d %B %Y %H:%M:%S"))
 
-    args = parse_args(argv)
-    config.configure_device(args.noGPU)
-    config.configure_dtype(args.complex64)
-    Xfin = run_simulation(args)
+#     args = parse_args(argv)
+#     config.configure_device(args.noGPU)
+#     config.configure_dtype(args.complex64)
+#     model = run_simulation(args)
 
-    print("Runtime =", time.time() - start_time, "s")
+#     print("Runtime =", time.time() - start_time, "s")
 
-    return Xfin
-
+#     return model
 
 if __name__ == "__main__":
     args = parse_args(sys.argv[1:])
-    Xfin = main(sys.argv[1:])
+
+    start_time = time.time()
+    print("STARTED:", datetime.datetime.now().strftime("%d %B %Y %H:%M:%S"))
+
+    config.configure_device(args.noGPU)
+    config.configure_dtype(args.complex64)
+    model = run_simulation(args)
+    
+    print("Runtime =", time.time() - start_time, "s")

@@ -50,7 +50,7 @@ class PIKKTTypeIIModel(MatrixModel):
         self.model_key = "type2"
 
         dim_tr = self.ncol * self.ncol
-        self._omega_eye = (2 / 3 * self.omega) * get_eye_cached(
+        self._eye23 = (2 / 3) * get_eye_cached(
             2 * dim_tr, device=config.device, dtype=config.dtype
         )
         if config.ENABLE_TORCH_COMPILE and hasattr(torch, "compile"):
@@ -88,8 +88,7 @@ class PIKKTTypeIIModel(MatrixModel):
         bottom = torch.cat((lower_left, lower_right), dim=1)
         K = torch.cat((top, bottom), dim=0)
 
-        omega_eye = self._omega_eye.to(dtype=K.dtype)
-        K = K - omega_eye
+        K = K - self._eye23.to(dtype=K.dtype)
 
         N = X.shape[-1]
         dim = N * N
@@ -162,7 +161,7 @@ class PIKKTTypeIIModel(MatrixModel):
             grad = grad - trs[..., None, None] * eye
         return grad
 
-    def potential(self, X: torch.Tensor | None = None) -> torch.Tensor:
+    def bosonic_potential(self, X: torch.Tensor | None = None) -> torch.Tensor:
         X = self._resolve_X(X)
         bos = -0.5 * _commutator_action_sum(X)
         bos = bos + 2j * (1 + self.omega) * (
@@ -174,14 +173,21 @@ class PIKKTTypeIIModel(MatrixModel):
         upto = min(3, self.nmat)
         coeffs[:upto] = coeffs[:upto] + extra
         bos = bos + torch.dot(coeffs, trace_sq)
-
+        return (bos.real * (self.ncol / self.g))
+    
+    def ferm_potential(self, X: torch.Tensor | None = None) -> torch.Tensor:
+        X = self._resolve_X(X)
         K = self.fermionMat(X)
         det = -torch.slogdet(K)[1].real
+        return det
+
+    def potential(self, X: torch.Tensor | None = None) -> torch.Tensor:
+        X = self._resolve_X(X)
 
         src = torch.tensor(0.0, dtype=X.dtype, device=X.device)
         if self.source is not None:
             src = -(self.ncol / np.sqrt(self.g)) * torch.trace(self.source @ X[0])
-        return (bos.real * (self.ncol / self.g)) + det + src.real
+        return self.bosonic_potential(X) + self.ferm_potential(X) + src.real
 
     def measure_observables(self, X: torch.Tensor | None = None):
         with torch.no_grad():
