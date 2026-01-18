@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from pIKKT4D import config
-from pIKKT4D.algebra import kron_2d
+from MatrixModelHMC_pytorch import config
+from MatrixModelHMC_pytorch.algebra import kron_2d
 
 
 def _commutator_action_sum(X: torch.Tensor) -> torch.Tensor:

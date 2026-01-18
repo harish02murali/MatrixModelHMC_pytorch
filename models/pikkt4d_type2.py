@@ -7,8 +7,8 @@ import os
 import numpy as np
 import torch
 
-from pIKKT4D import config
-from pIKKT4D.algebra import (
+from MatrixModelHMC_pytorch import config
+from MatrixModelHMC_pytorch.algebra import (
     ad_matrix,
     get_eye_cached,
     get_trace_projector_cached,
@@ -16,8 +16,8 @@ from pIKKT4D.algebra import (
     random_hermitian,
     spinJMatrices,
 )
-from pIKKT4D.models.base import MatrixModel
-from pIKKT4D.models.utils import _commutator_action_sum
+from MatrixModelHMC_pytorch.models.base import MatrixModel
+from MatrixModelHMC_pytorch.models.utils import _commutator_action_sum
 
 
 def _adjoint_grad_from_matrix(M: torch.Tensor, ncol: int) -> torch.Tensor:

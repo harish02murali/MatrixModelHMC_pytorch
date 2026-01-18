@@ -27,13 +27,13 @@ import torch
 
 # Support both package and script execution
 if not __package__:
-    # When executed as "python pIKKT4D/main.py"
+    # When executed as "python MatrixModelHMC_pytorch/main.py"
     sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 try:
-    from pIKKT4D import config
-    from pIKKT4D.hmc import HMCParams, update, thermalize
-    from pIKKT4D.models import (
+    from MatrixModelHMC_pytorch import config
+    from MatrixModelHMC_pytorch.hmc import HMCParams, update, thermalize
+    from MatrixModelHMC_pytorch.models import (
         MatrixModel,
         build_model,
         PIKKTTypeIModel,
@@ -41,7 +41,7 @@ try:
         gammaMajorana,
         gammaWeyl,
     )
-    from pIKKT4D.cli import parse_args, DEFAULT_DATA_PATH, DEFAULT_PROFILE
+    from MatrixModelHMC_pytorch.cli import parse_args, DEFAULT_DATA_PATH, DEFAULT_PROFILE
 except ImportError:  # pragma: no cover
     import config  # type: ignore
     from hmc import HMCParams, update, thermalize  # type: ignore

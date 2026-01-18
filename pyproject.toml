@@ -3,7 +3,7 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pIKKT4D"
+name = "MatrixModelHMC_pytorch"
 version = "0.0.0"
 description = "Hybrid Monte Carlo drivers for polarized IKKT-like matrix models"
 readme = "README.md"
@@ -11,5 +11,5 @@ requires-python = ">=3.9"
 dependencies = ["numpy", "torch"]
 
 [tool.setuptools]
-packages = ["pIKKT4D", "pIKKT4D.models"]
-package-dir = { pIKKT4D = "." }
+packages = ["MatrixModelHMC_pytorch", "MatrixModelHMC_pytorch.models"]
+package-dir = { MatrixModelHMC_pytorch = "." }

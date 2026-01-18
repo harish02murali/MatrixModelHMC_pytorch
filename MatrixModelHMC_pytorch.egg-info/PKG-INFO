@@ -1,3 +1,12 @@
+Metadata-Version: 2.4
+Name: MatrixModelHMC_pytorch
+Version: 0.0.0
+Summary: Hybrid Monte Carlo drivers for polarized IKKT-like matrix models
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+Requires-Dist: torch
+
 # MatrixModelHMC_pytorch Hybrid Monte Carlo
 
 Python/Torch implementation of Hybrid Monte Carlo for the polarized $D=4$ IKKT (IIB) matrix model (see [A. Martina, arXiv:2507.17813](https://arxiv.org/pdf/2507.17813)). The code cleanly separates the model-specific action and observables (the `models/` package) from the HMC integrator (`hmc.py`).

@@ -7,8 +7,8 @@ from argparse import Namespace
 
 import torch
 
-from pIKKT4D import config
-from pIKKT4D.algebra import get_eye_cached, makeH
+from MatrixModelHMC_pytorch import config
+from MatrixModelHMC_pytorch.algebra import get_eye_cached, makeH
 
 
 class MatrixModel:

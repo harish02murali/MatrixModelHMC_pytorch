@@ -7,7 +7,7 @@ from typing import Any
 import torch
 
 try:
-    from pIKKT4D.algebra import random_hermitian
+    from MatrixModelHMC_pytorch.algebra import random_hermitian
 except ImportError:  # pragma: no cover
     from algebra import random_hermitian  # type: ignore
 
@@ -52,7 +52,6 @@ def leapfrog(X: torch.Tensor, hmc_params: HMCParams, model: Any) -> tuple[torch.
 
 def update(acc_count: int, hmc_params: HMCParams, model: Any, reject_prob: float = 1.0):
     """Run one HMC trajectory and Metropolis accept/reject step, mutating model.X."""
-    model.refresh_aux_fields()
     X = model.get_state()
     X_bak = X.clone()
     X_new, H0, H1 = leapfrog(X, hmc_params, model)

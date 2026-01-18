@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from argparse import Namespace
 
-from pIKKT4D.models.base import MatrixModel
-from pIKKT4D.models.one_matrix import OneMatrixPolynomialModel
-from pIKKT4D.models.pikkt4d_type1 import PIKKTTypeIModel
-from pIKKT4D.models.pikkt4d_type2 import PIKKTTypeIIModel
-from pIKKT4D.models.adjoint_det import AdjointDetModel
-from pIKKT4D.models.yang_mills import YangMillsModel
-from pIKKT4D.models.utils import gammaMajorana, gammaWeyl
+from MatrixModelHMC_pytorch.models.base import MatrixModel
+from MatrixModelHMC_pytorch.models.one_matrix import OneMatrixPolynomialModel
+from MatrixModelHMC_pytorch.models.pikkt4d_type1 import PIKKTTypeIModel
+from MatrixModelHMC_pytorch.models.pikkt4d_type2 import PIKKTTypeIIModel
+from MatrixModelHMC_pytorch.models.adjoint_det import AdjointDetModel
+from MatrixModelHMC_pytorch.models.yang_mills import YangMillsModel
+from MatrixModelHMC_pytorch.models.utils import gammaMajorana, gammaWeyl
 
 
 def build_model(args: Namespace) -> MatrixModel:

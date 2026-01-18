@@ -7,7 +7,7 @@ from typing import Optional
 import numpy as np
 
 try:
-    from pIKKT4D import config
+    from MatrixModelHMC_pytorch import config
 except ImportError:  # pragma: no cover
     import config  # type: ignore
 

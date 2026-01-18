@@ -8,8 +8,8 @@ from argparse import Namespace
 import numpy as np
 import torch
 
-from pIKKT4D import config
-from pIKKT4D.models.base import MatrixModel
+from MatrixModelHMC_pytorch import config
+from MatrixModelHMC_pytorch.models.base import MatrixModel
 
 
 class OneMatrixPolynomialModel(MatrixModel):

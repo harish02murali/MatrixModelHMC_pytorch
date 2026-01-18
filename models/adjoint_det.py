@@ -7,9 +7,9 @@ import os
 import numpy as np
 import torch
 
-from pIKKT4D import config
-from pIKKT4D.models.base import MatrixModel
-from pIKKT4D.models.utils import (
+from MatrixModelHMC_pytorch import config
+from MatrixModelHMC_pytorch.models.base import MatrixModel
+from MatrixModelHMC_pytorch.models.utils import (
     _anticommutator_action_sum,
     _commutator_action_sum,
     _fermion_det_log_identity_plus_sum_adX,
