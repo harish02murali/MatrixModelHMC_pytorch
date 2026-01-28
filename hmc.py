@@ -1,6 +1,7 @@
 """Model-agnostic Hybrid Monte Carlo kernels: leapfrog and Metropolis step."""
 
 import math
+import numpy as np
 import random
 from dataclasses import dataclass, replace
 from typing import Any
@@ -66,10 +67,10 @@ def update(acc_count: int, hmc_params: HMCParams, model: Any, reject_prob: float
     if accept:
         model.set_state(X_new)
         acc_count += 1
-        print(f"ACCEPT: dH={dH: 8.3f}, expDH={math.exp(-dH): 8.3f}, H0={H0: 8.4f}, ", model.status_string())
+        print(f"ACCEPT: dH={dH: 8.3f}, expDH={np.exp(-dH): 8.3f}, H0={H0: 8.4f}, ", model.status_string())
     else:
         model.set_state(X_bak)
-        print(f"REJECT: dH={dH: 8.3f}, expDH={math.exp(-dH): 8.3f}, H0={H0: 8.4f}, ", model.status_string())
+        print(f"REJECT: dH={dH: 8.3f}, expDH={np.exp(-dH): 8.3f}, H0={H0: 8.4f}, ", model.status_string())
 
     return acc_count
 

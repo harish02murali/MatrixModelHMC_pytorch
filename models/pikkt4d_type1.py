@@ -91,7 +91,7 @@ class PIKKTTypeIModel(MatrixModel):
         self.set_state(X)
 
     def potential(self, X: torch.Tensor | None = None) -> torch.Tensor:
-        X = self._resolve_X(X) + self.X0
+        X = self._resolve_X(X)
         bos = -0.5 * _commutator_action_sum(X)
         trace_sq = torch.einsum("bij,bji->", X, X)
         bos = bos + trace_sq

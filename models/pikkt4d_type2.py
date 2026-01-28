@@ -242,7 +242,8 @@ class PIKKTTypeIIModel(MatrixModel):
             torch.trace(X[0] @ X[0] + X[1] @ X[1] + X[2] @ X[2]) / self.ncol
         ).item().real
         trX4 = (torch.trace(X[3] @ X[3]) / self.ncol).item().real
-        return f"casimir = {casimir:.5f}, trX_4^2 = {trX4:.5f}. "
+        trX34 = (torch.trace(X[2] @ X[2] - X[3] @ X[3]) / self.ncol).item().real
+        return f"casimir = {casimir:.5f}, mom34 = {trX34:.5f}. "
 
     def run_metadata(self) -> dict[str, object]:
         meta = super().run_metadata()
