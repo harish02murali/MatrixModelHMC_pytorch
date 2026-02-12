@@ -6,3 +6,5 @@ dataAnalysis*.ipynb
 __pycache__/
 *.egg-info/
 build/
+*.pdf
+*.png

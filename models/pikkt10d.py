@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 from MatrixModelHMC_pytorch import config
-from MatrixModelHMC_pytorch.algebra import random_hermitian
+from MatrixModelHMC_pytorch.algebra import random_hermitian, spinJMatrices
 from MatrixModelHMC_pytorch.models.base import MatrixModel
 from MatrixModelHMC_pytorch.models.utils import _commutator_action_sum
 
@@ -49,6 +49,19 @@ class PIKKT10DModel(MatrixModel):
         scale = float(np.sqrt(self.g / self.ncol))
         mats = [scale * random_hermitian(self.ncol) for _ in range(self.nmat)]
         X = torch.stack(mats, dim=0).to(dtype=config.dtype, device=config.device)
+
+        if args.spin is not None:
+            J_matrices = torch.from_numpy(spinJMatrices(args.spin)).to(
+                dtype=config.dtype, device=config.device
+            )
+            ntimes = self.ncol // J_matrices.shape[1]
+            eye_nt = torch.eye(ntimes, dtype=config.dtype, device=config.device)
+            dim = ntimes * J_matrices.shape[1]
+
+            X = torch.zeros_like(X)
+            for i in range(3):
+                X[i][:dim, :dim] = 3/8 * torch.kron(eye_nt, J_matrices[i])
+
         self.set_state(X)
 
     def fermion_determinant(self, X: torch.Tensor | None = None) -> torch.Tensor:
@@ -80,6 +93,11 @@ class PIKKT10DModel(MatrixModel):
         with torch.no_grad():
             X = self._resolve_X(X)
             eigs = [torch.linalg.eigvalsh(mat).cpu().numpy() for mat in X]
+            eigs.append(
+                torch.linalg.eigvalsh(X[0] @ X[0] + X[1] @ X[1] + X[2] @ X[2])
+                .cpu()
+                .numpy()
+            )
 
             trace_sq = torch.einsum("bij,bji->b", X, X).real
             tr_i = trace_sq[:3].sum() / (3 * self.ncol)

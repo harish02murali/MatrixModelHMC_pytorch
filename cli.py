@@ -56,9 +56,14 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="Print resolved configuration and exit")
     parser.add_argument("--source", type=_parse_source, default=None, help="Numpy expression for source, e.g., np.linspace(-1,1,20)")
     type2_group = parser.add_argument_group(
-        "Type II options", "Only relevant when --model pikkt4d_type2 is selected"
+        "Type II / 10D options", "Relevant for --model pikkt4d_type2 and --model pikkt10d"
     )
-    type2_group.add_argument("--spin", type=float, default=None, help="Spin for the fuzzy sphere background")
+    type2_group.add_argument(
+        "--spin",
+        type=float,
+        default=None,
+        help="Spin for the fuzzy-sphere background in X1,X2,X3",
+    )
     type2_group.add_argument("--bosonic", action="store_true", help="Disable fermionic determinant term")
     type2_group.add_argument(
         "--lorentzian",
