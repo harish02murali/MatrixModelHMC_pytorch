@@ -14,6 +14,16 @@ from MatrixModelHMC_pytorch.models.utils import _commutator_action_sum
 
 
 ENABLE_TORCH_COMPILE = config.ENABLE_TORCH_COMPILE
+model_name = "pikkt4d_type1"
+
+
+def build_model(args):
+    return PIKKTTypeIModel(
+        ncol=args.ncol,
+        couplings=args.coupling,
+        source=args.source,
+        no_myers=getattr(args, "no_myers", False),
+    )
 
 
 def _type1_logdet_impl(X: torch.Tensor, A: torch.Tensor) -> torch.Tensor:
@@ -58,7 +68,7 @@ def _type1_logdet_impl(X: torch.Tensor, A: torch.Tensor) -> torch.Tensor:
 class PIKKTTypeIModel(MatrixModel):
     """Type I polarized IKKT model definition."""
 
-    model_name = "pikkt4d_type1"
+    model_name = model_name
 
     def __init__(self, ncol: int, couplings: list, source: np.ndarray | None = None, no_myers: bool = False) -> None:
         super().__init__(nmat=4, ncol=ncol)

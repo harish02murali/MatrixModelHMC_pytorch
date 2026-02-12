@@ -31,7 +31,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         required=True,
         help=(
             "Matrix model name registered in the models package (e.g., 1mm, "
-            "pikkt4d_type1, pikkt4d_type2, yangmills)"
+            "pikkt4d_type1, pikkt4d_type2, pikkt10d, yangmills)"
         ),
     )
     parser.add_argument("--resume", action="store_true", help="Load a checkpoint if present")
@@ -59,6 +59,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "Type II options", "Only relevant when --model pikkt4d_type2 is selected"
     )
     type2_group.add_argument("--spin", type=float, default=None, help="Spin for the fuzzy sphere background")
+    type2_group.add_argument("--bosonic", action="store_true", help="Disable fermionic determinant term")
+    type2_group.add_argument(
+        "--lorentzian",
+        action="store_true",
+        help="Replace X4 -> i X4 in the potential (and corresponding force)",
+    )
     args = parser.parse_args(argv)
     validate_args(args)
     return args
@@ -73,13 +79,18 @@ def validate_args(args: argparse.Namespace) -> None:
     if len(args.coupling) == 0:
         raise ValueError("--coupling requires at least one value")
     model_lower = args.model.lower()
-    if model_lower in ("1mm", "one_matrix"):
+    if model_lower == "1mm":
         if len(args.coupling) < 1:
             raise ValueError("1mm model requires at least one coupling via --coupling t1 [t2 ...]")
     if model_lower == "pikkt4d_type1" and len(args.coupling) != 1:
         raise ValueError("pIKKT Type I requires exactly one coupling g via --coupling g")
     if model_lower == "pikkt4d_type2" and len(args.coupling) != 2:
         raise ValueError("pIKKT Type II requires exactly two couplings via --coupling g omega")
+    if model_lower == "pikkt10d":
+        if len(args.coupling) != 1:
+            raise ValueError("pikkt10d requires exactly one coupling g via --coupling g")
+        if args.nmat is not None and args.nmat != 10:
+            raise ValueError("pikkt10d has fixed dimension D=10; omit --nmat or set --nmat 10")
     if model_lower == "yangmills":
         if len(args.coupling) != 1:
             raise ValueError("Yang-Mills model requires a single coupling g via --coupling g")

@@ -11,11 +11,20 @@ import torch
 from MatrixModelHMC_pytorch import config
 from MatrixModelHMC_pytorch.models.base import MatrixModel
 
+model_name = "1mm"
+
+
+def build_model(args):
+    return OneMatrixPolynomialModel(
+        ncol=args.ncol,
+        couplings=args.coupling,
+    )
+
 
 class OneMatrixPolynomialModel(MatrixModel):
     """Single-matrix polynomial model V(X) = sum_n t_n Tr(X^n)."""
 
-    model_name = "1mm"
+    model_name = model_name
 
     def __init__(self, ncol: int, couplings: list) -> None:
         if len(couplings) == 0:

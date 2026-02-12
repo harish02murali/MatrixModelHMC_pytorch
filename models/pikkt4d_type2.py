@@ -19,6 +19,18 @@ from MatrixModelHMC_pytorch.algebra import (
 from MatrixModelHMC_pytorch.models.base import MatrixModel
 from MatrixModelHMC_pytorch.models.utils import _commutator_action_sum
 
+model_name = "pikkt4d_type2"
+
+
+def build_model(args):
+    return PIKKTTypeIIModel(
+        ncol=args.ncol,
+        couplings=args.coupling,
+        source=args.source,
+        bosonic=getattr(args, "bosonic", False),
+        lorentzian=getattr(args, "lorentzian", False),
+    )
+
 
 def _adjoint_grad_from_matrix(M: torch.Tensor, ncol: int) -> torch.Tensor:
     """Return grad of Tr(M^T ad_X) with column-major vec ordering."""
@@ -33,13 +45,22 @@ def _adjoint_grad_from_matrix(M: torch.Tensor, ncol: int) -> torch.Tensor:
 class PIKKTTypeIIModel(MatrixModel):
     """Type II polarized IKKT model definition."""
 
-    model_name = "pikkt4d_type2"
+    model_name = model_name
 
-    def __init__(self, ncol: int, couplings: list, source: np.ndarray | None = None) -> None:
+    def __init__(
+        self,
+        ncol: int,
+        couplings: list,
+        source: np.ndarray | None = None,
+        bosonic: bool = False,
+        lorentzian: bool = False,
+    ) -> None:
         super().__init__(nmat=4, ncol=ncol)
         self.couplings = couplings
         self.g = self.couplings[0]
         self.omega = self.couplings[1]
+        self.bosonic = bosonic
+        self.lorentzian = lorentzian
         self.source = (
             torch.diag(torch.tensor(source, device=config.device, dtype=config.dtype))
             if source is not None
@@ -54,6 +75,13 @@ class PIKKTTypeIIModel(MatrixModel):
         )
         if config.ENABLE_TORCH_COMPILE and hasattr(torch, "compile"):
             self._force_impl = torch.compile(self._force_impl, dynamic=False)
+
+    def _effective_X(self, X: torch.Tensor) -> torch.Tensor:
+        if not self.lorentzian:
+            return X
+        X_eff = X.clone()
+        X_eff[3] = 1j * X_eff[3]
+        return X_eff
 
     def load_fresh(self, args):
         mats = [random_hermitian(self.ncol) for _ in range(self.nmat)]
@@ -119,33 +147,38 @@ class PIKKTTypeIIModel(MatrixModel):
 
     def _force_impl(self, X: torch.Tensor) -> torch.Tensor:
         X = self._resolve_X(X)
-        grad = torch.zeros_like(X)
+        X_eff = self._effective_X(X)
+        grad = torch.zeros_like(X_eff)
 
         for i in range(self.nmat):
-            acc = torch.zeros_like(X[i])
+            acc = torch.zeros_like(X_eff[i])
             for j in range(self.nmat):
                 if i == j:
                     continue
-                comm = X[i] @ X[j] - X[j] @ X[i]
-                acc = acc + (X[j] @ comm - comm @ X[j])
+                comm = X_eff[i] @ X_eff[j] - X_eff[j] @ X_eff[i]
+                acc = acc + (X_eff[j] @ comm - comm @ X_eff[j])
             grad[i] = -acc
 
         coeff = 2j * (1 + self.omega)
-        grad[0] += coeff * (X[1] @ X[2] - X[2] @ X[1])
-        grad[1] += coeff * (X[2] @ X[0] - X[0] @ X[2])
-        grad[2] += coeff * (X[0] @ X[1] - X[1] @ X[0])
+        grad[0] += coeff * (X_eff[1] @ X_eff[2] - X_eff[2] @ X_eff[1])
+        grad[1] += coeff * (X_eff[2] @ X_eff[0] - X_eff[0] @ X_eff[2])
+        grad[2] += coeff * (X_eff[0] @ X_eff[1] - X_eff[1] @ X_eff[0])
 
         coeffs = torch.full((self.nmat,), self.omega / 3, dtype=config.real_dtype, device=X.device)
         extra = torch.tensor(2 / 9, dtype=config.real_dtype, device=X.device)
         upto = min(3, self.nmat)
         coeffs[:upto] = coeffs[:upto] + extra
-        grad = grad + 2 * coeffs[:, None, None] * X
+        grad = grad + 2 * coeffs[:, None, None] * X_eff
 
         grad = grad * (self.ncol / self.g)
-        grad = grad + self._fermion_force(X)
+        if not self.bosonic:
+            grad = grad + self._fermion_force(X_eff)
 
         if self.source is not None:
             grad[0] += -(self.ncol / np.sqrt(self.g)) * self.source
+
+        if self.lorentzian:
+            grad[3] = 1j * grad[3]
 
         return grad
 
@@ -162,11 +195,13 @@ class PIKKTTypeIIModel(MatrixModel):
 
     def bosonic_potential(self, X: torch.Tensor | None = None) -> torch.Tensor:
         X = self._resolve_X(X)
-        bos = -0.5 * _commutator_action_sum(X)
+        X_eff = self._effective_X(X)
+        bos = -0.5 * _commutator_action_sum(X_eff)
         bos = bos + 2j * (1 + self.omega) * (
-            torch.trace(X[0] @ X[1] @ X[2]) - torch.trace(X[0] @ X[2] @ X[1])
+            torch.trace(X_eff[0] @ X_eff[1] @ X_eff[2])
+            - torch.trace(X_eff[0] @ X_eff[2] @ X_eff[1])
         )
-        trace_sq = torch.einsum("bij,bji->b", X, X).real
+        trace_sq = torch.einsum("bij,bji->b", X_eff, X_eff).real
         coeffs = torch.full((self.nmat,), self.omega / 3, dtype=config.real_dtype, device=X.device)
         extra = torch.tensor(2 / 9, dtype=config.real_dtype, device=X.device)
         upto = min(3, self.nmat)
@@ -176,7 +211,8 @@ class PIKKTTypeIIModel(MatrixModel):
     
     def ferm_potential(self, X: torch.Tensor | None = None) -> torch.Tensor:
         X = self._resolve_X(X)
-        K = self.fermionMat(X)
+        X_eff = self._effective_X(X)
+        K = self.fermionMat(X_eff)
         det = -torch.slogdet(K)[1].real
         return det
 
@@ -186,6 +222,8 @@ class PIKKTTypeIIModel(MatrixModel):
         src = torch.tensor(0.0, dtype=X.dtype, device=X.device)
         if self.source is not None:
             src = -(self.ncol / np.sqrt(self.g)) * torch.trace(self.source @ X[0])
+        if self.bosonic:
+            return self.bosonic_potential(X) + src.real
         return self.bosonic_potential(X) + self.ferm_potential(X) + src.real
 
     def measure_observables(self, X: torch.Tensor | None = None):
@@ -234,7 +272,15 @@ class PIKKTTypeIIModel(MatrixModel):
         }
 
     def extra_config_lines(self) -> list[str]:
-        return [f"  Coupling g               = {self.g}", f"  Coupling Omega2/Omega1   = {self.omega}"]
+        lines = [
+            f"  Coupling g               = {self.g}",
+            f"  Coupling Omega2/Omega1   = {self.omega}",
+        ]
+        if self.bosonic:
+            lines.append("  Fermion determinant      = disabled")
+        if self.lorentzian:
+            lines.append("  Lorentzian X4            = enabled")
+        return lines
 
     def status_string(self, X: torch.Tensor | None = None) -> str:
         X = self._resolve_X(X)
@@ -251,6 +297,8 @@ class PIKKTTypeIIModel(MatrixModel):
             {
                 "has_source": self.source is not None,
                 "model_variant": "type2",
+                "bosonic_only": self.bosonic,
+                "lorentzian_x4": self.lorentzian,
             }
         )
         return meta

@@ -4,3 +4,5 @@ dataAnalysis*.ipynb
 *.ipynb
 *.npy
 __pycache__/
+*.egg-info/
+build/

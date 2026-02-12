@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import cProfile
 import datetime
+import importlib
 import json
 import os
 import pstats
@@ -33,27 +34,17 @@ if not __package__:
 try:
     from MatrixModelHMC_pytorch import config
     from MatrixModelHMC_pytorch.hmc import HMCParams, update, thermalize
-    from MatrixModelHMC_pytorch.models import (
-        MatrixModel,
-        build_model,
-        PIKKTTypeIModel,
-        PIKKTTypeIIModel,
-        gammaMajorana,
-        gammaWeyl,
-    )
+    from MatrixModelHMC_pytorch.models.base import MatrixModel
+    from MatrixModelHMC_pytorch.models.utils import gammaMajorana, gammaWeyl
     from MatrixModelHMC_pytorch.cli import parse_args, DEFAULT_DATA_PATH, DEFAULT_PROFILE
+    _MODEL_MODULE_PREFIX = "MatrixModelHMC_pytorch.models"
 except ImportError:  # pragma: no cover
     import config  # type: ignore
     from hmc import HMCParams, update, thermalize  # type: ignore
-    from models import (  # type: ignore
-        MatrixModel,
-        build_model,
-        PIKKTTypeIModel,
-        PIKKTTypeIIModel,
-        gammaMajorana,
-        gammaWeyl,
-    )
+    from models.base import MatrixModel  # type: ignore
+    from models.utils import gammaMajorana, gammaWeyl  # type: ignore
     from cli import parse_args, DEFAULT_DATA_PATH, DEFAULT_PROFILE  # type: ignore
+    _MODEL_MODULE_PREFIX = "models"
 
 
 DATA_PATH = DEFAULT_DATA_PATH
@@ -185,7 +176,21 @@ def write_run_metadata(path: str, model: MatrixModel, args: argparse.Namespace) 
 def run_simulation(args: argparse.Namespace) -> MatrixModel:
     """Configure model/HMC parameters and execute the requested number of trajectories."""
     dt = args.step_size / args.nsteps
-    model = build_model(args)
+    model_name = str(getattr(args, "model", "")).strip().lower()
+    if not model_name:
+        raise ValueError("Model name is empty; provide --model <model_name>")
+    module_path = f"{_MODEL_MODULE_PREFIX}.{model_name}"
+    try:
+        model_module = importlib.import_module(module_path)
+    except ModuleNotFoundError as exc:
+        if exc.name == module_path:
+            raise ValueError(f"Unknown model '{model_name}'. Expected file models/{model_name}.py") from exc
+        raise
+
+    if not hasattr(model_module, "build_model"):
+        raise ValueError(f"Model module '{module_path}' must define build_model(args)")
+
+    model = model_module.build_model(args)
     hmc_params = HMCParams(
         dt=dt,
         nsteps=args.nsteps,

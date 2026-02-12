@@ -12,11 +12,24 @@ from MatrixModelHMC_pytorch.algebra import random_hermitian
 from MatrixModelHMC_pytorch.models.base import MatrixModel
 from MatrixModelHMC_pytorch.models.utils import _commutator_action_sum
 
+model_name = "yangmills"
+
+
+def build_model(args):
+    if args.nmat is None:
+        raise ValueError("--nmat must be provided for yangmills model")
+    return YangMillsModel(
+        dim=args.nmat,
+        ncol=args.ncol,
+        couplings=args.coupling,
+        source=args.source,
+    )
+
 
 class YangMillsModel(MatrixModel):
     """D-dimensional Yang-Mills matrix model."""
 
-    model_name = "yangmills"
+    model_name = model_name
 
     def __init__(self, dim: int, ncol: int, couplings: list, source: np.ndarray | None = None) -> None:
         super().__init__(nmat=dim, ncol=ncol)

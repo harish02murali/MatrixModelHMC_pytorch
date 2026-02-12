@@ -17,12 +17,24 @@ from MatrixModelHMC_pytorch.models.utils import (
 
 
 ENABLE_TORCH_COMPILE = config.ENABLE_TORCH_COMPILE
+model_name = "adjoint_det"
+
+
+def build_model(args):
+    if args.nmat is None:
+        raise ValueError("--nmat must be provided for adjoint_det model")
+    return AdjointDetModel(
+        dim=args.nmat,
+        ncol=args.ncol,
+        couplings=args.coupling,
+        source=args.source,
+    )
 
 
 class AdjointDetModel(MatrixModel):
     """Matrix model with product fermion determinant det(1 + \sum_i ad X_i)."""
 
-    model_name = "adjoint_det"
+    model_name = model_name
 
     def __init__(self, dim: int, ncol: int, couplings: list, source: np.ndarray | None = None) -> None:
         super().__init__(nmat=dim, ncol=ncol)

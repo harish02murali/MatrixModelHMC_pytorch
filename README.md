@@ -1,82 +1,141 @@
-# MatrixModelHMC_pytorch Hybrid Monte Carlo
+# MatrixModelHMC_pytorch
 
-Python/Torch implementation of Hybrid Monte Carlo for the polarized $D=4$ IKKT (IIB) matrix model (see [A. Martina, arXiv:2507.17813](https://arxiv.org/pdf/2507.17813)). The code cleanly separates the model-specific action and observables (the `models/` package) from the HMC integrator (`hmc.py`).
+PyTorch implementation of Hybrid Monte Carlo (HMC) for several matrix models, including polarized IKKT variants.  
+The code is model-driven: each file in `models/` defines one model via `build_model(args)`, while `hmc.py` and `main.py` provide shared integrator + I/O logic.
 
-## Model
+## Requirements
 
-The four Hermitian matrices $X_I$ (with $I=1\ldots4$) and their fermionic partners $\psi$ are evolved with two supersymmetric mass deformations
+- Python `>=3.9`
+- `torch`
+- `numpy`
 
-**Type I, $SO(4)$ invariant, single coupling constant $g$**
+Install in editable mode:
+
+```bash
+pip install -e .
+```
+
+## Available Models
+**Four dimensional Models**
+
+Type I, $SO(4)$ invariant, single coupling constant $g$:
 
 $$
 S_{D=4,\text{type I}}=\frac{1}{g}\text{Tr}\Bigl[-\frac14 [X_I,X_J]^2 -\frac{i}{2}\bar\psi \Gamma^I [X_I,\psi] + X_I^2 + \bar\psi\psi \Bigr]
 $$
 
-**Type II, $SO(3)$ invariant, two coupling constants $g$ and $\omega$**
+Type II, $SO(3)$ invariant, two coupling constants $g$ and $\omega$:
 
 $$
 \begin{aligned}
-S_{D=4,\text{type II}}=\frac{1}{g}\text{Tr}\Bigl[&-\frac14 [X_I,X_J]^2 -\frac{i}{2}\bar\psi \Gamma^I [X_I,\psi] + i \frac{2}{3}(1+\omega)\,\epsilon_{ijk} X_i X_j X_k \\
+S_{D=4,\text{type II}}=\frac{1}{g}\text{Tr}\Bigl[&-\frac14 [X_I,X_J]^2 -\frac{i}{2}\bar\psi \Gamma^I [X_I,\psi] + i \frac{2}{3}(1+\omega) \epsilon_{ijk} X_i X_j X_k \\
 &+ \frac{1}{3}\left(\omega + \frac{2}{3}\right) X_i X_i + \frac{\omega}{3} X_4^2 - \frac{1}{3} \bar\psi \Gamma^{123} \psi \Bigr]
 \end{aligned}
 $$
 
-In this codebase the couplings and mass-deformation choice are set via the CLI flags `--coupling` and `--model`. Use `--model pikkt4d_type1` for the Type I deformation (pass a single value to `--coupling`, interpreted as $g$) and `--model pikkt4d_type2` for Type II (two values to `--coupling`: first $g$, second $\omega$). A generic $D$-dimensional Yang-Mills model is also available via `--model yangmills`, where you can set the dimension with `--nmat`. You can register additional models in the `models/` package and select them at runtime via `--model`.
+In addition to these two, the repository includes a one-matrix model with polynomial potential, 10D bosonic pIKKT model, a variable-dimension Yang-Mills model, and an adjoint determinant model. Each has its own coupling structure and optional flags as described below.
 
-The package also includes a generic $D$-dimensional Yang-Mills matrix model (choose `--model yangmills`), whose action is $\frac{N}{g} \left(\sum_i \text{Tr}(X_i^2) - \frac14\sum_{ij} \text{Tr}([X_i,X_j]^2)\right)$.
+Model selection is dynamic: `--model <name>` loads `models/<name>.py`.
 
-## Setup
+- `pikkt4d_type1`
+  - Fixed `D=4`
+  - Couplings: `--coupling g`
+- `pikkt4d_type2`
+  - Fixed `D=4`
+  - Couplings: `--coupling g omega`
+  - Extra flags: `--spin`, `--bosonic`, `--lorentzian`
+- `pikkt10d`
+  - Fixed `D=10`
+  - Couplings: `--coupling g`
+  - Current implementation uses the bosonic sector with `Omega=1`; fermion determinant is a placeholder returning `0`
+- `yangmills`
+  - Variable dimension
+  - Requires `--nmat D`
+  - Couplings: `--coupling g`
+- `adjoint_det`
+  - Variable dimension
+  - Requires `--nmat D`
+  - Couplings: `--coupling g`
+- `1mm`
+  - Single-matrix polynomial model
+  - Couplings: `--coupling t1 [t2 ...]`
 
-The project uses Python 3 with PyTorch. Ensure `torch` is installed with CUDA support if available; otherwise it will fall back to CPU (significantly slower for the polarized IKKT models. This is due to the $O(N^6)$ scaling of computing derivatives of the fermionic determinant. For pure bosonic models, CPU is actually faster because of the data transfer and kernel launch overheads). No extra dependencies are required beyond NumPy and Matplotlib for analysis.
+## Running
 
-## Usage
-
-With this code, we can run $4D$ Polarized IKKT at $N=45$ with $400$ steps in under $2$ hours on `NVIDIA GeForce RTX 2080 Ti`.
-
-Basic run (Type I, $N=10,\ g=100$). Outputs stored to `outputs/myRunName_pikkt4d_type1_g100.0_N10/`:
+Basic Type I run:
 
 ```bash
-python main.py --model pikkt4d_type1 --ncol 10 --niters 300 --coupling 100.0 --fresh --name myRunName --data-path outputs
+python main.py --model pikkt4d_type1 --ncol 10 --niters 300 --coupling 100.0 --name runA --data-path outputs
 ```
 
-Type II with $N=10,\ \omega = 1$ and $g=100$ (note the double entry for `--coupling`):
+Type II run:
 
 ```bash
-python main.py --model pikkt4d_type2 --ncol 10 --niters 300 --coupling 100.0 1.0 --fresh --name myRunName --data-path outputs
+python main.py --model pikkt4d_type2 --ncol 10 --niters 300 --coupling 100.0 1.0 --name runB --data-path outputs
 ```
 
-$D$-dimensional Yang-Mills with $D=6$, $N=12$, and $g=50$:
+10D pIKKT run:
 
 ```bash
-python main.py --model yangmills --nmat 6 --ncol 12 --niters 200 --coupling 50.0 --fresh --name ymRun --data-path outputs
+python main.py --model pikkt10d --ncol 10 --niters 300 --coupling 0.1 --step-size 0.1 --nsteps 300 --name run10d --data-path outputs
 ```
 
-Resume from a checkpoint:
+Yang-Mills in `D=6`:
 
 ```bash
-python main.py --resume --name myRunName --data-path outputs
+python main.py --model yangmills --nmat 6 --ncol 12 --niters 200 --coupling 50.0 --name ymRun --data-path outputs
 ```
 
-Key flags (see `cli.py` for defaults):
-- `--model NAME`: registered matrix model (required argument).
-- `--ncol N`: matrix size \(N\).
-- `--niters K`: HMC trajectories to run.
-- `--step-size`, `--nsteps`: leapfrog integrator controls ($\Delta t$ and steps).
-- `--coupling ...`: list of couplings (Type I expects a single $g$, Type II expects two values: $g$ and the ratio $\omega$).
-- `--gpu`: uses gpu when available. defaults to cpu
-- `--save`, `--save-every`: checkpoint cadence.
-- `--data-path`: directory for outputs/checkpoints.
-- `--seed`: RNG seed for deterministic runs.
-- `--nmat`: number of matrices (dimension), overwritten for `--model pikkt4d_type2`, and `--model pikkt4d_type1`.
-- **Type II options** (only meaningful when `--model pikkt4d_type2`): `--spin` (optional fuzzy-sphere background)
+Adjoint determinant model:
 
-Outputs:
-- Each run writes to `data_path/{name}_{model}_g{...}_N{...}/` and stores eigenvalues, correlators, checkpoints, and configuration metadata as `evals.npz`, `corrs.npz`, `checkpoint.pt`, and `metadata.json` inside that directory.
+```bash
+python main.py --model adjoint_det --nmat 6 --ncol 12 --niters 200 --coupling 50.0 --name adRun --data-path outputs
+```
 
-## Code structure
+Resume a run (same model/name/path configuration):
 
-- `main.py` — CLI entry point, I/O, thermalization, and trajectory loop.
-- `cli.py` — argument parsing and validation.
-- `models/` — action, fermion determinants, observables, spin backgrounds (one file per model).
-- `hmc.py` — model-agnostic leapfrog integrator and Metropolis step.
-- `algebra.py` — Hermitian/traceless projections and adjoint actions.  
+```bash
+python main.py --model pikkt4d_type2 --coupling 100.0 1.0 --resume --name runB --data-path outputs
+```
+
+Dry-run config check (no trajectories):
+
+```bash
+python main.py --model pikkt10d --ncol 10 --coupling 0.1 --dry-run --data-path outputs
+```
+
+## CLI Notes
+
+Important flags:
+
+- `--model`: required model name.
+- `--ncol`: matrix size `N`.
+- `--coupling`: model-dependent couplings.
+- `--niters`: number of trajectories.
+- `--step-size`, `--nsteps`: leapfrog controls (`dt = step-size / nsteps`).
+- `--no-gpu`: force CPU even if CUDA is available.
+- `--complex64`: switch from complex128/float64 to complex64/float32.
+- `--resume`: load checkpoint if present.
+- `--fresh`: ignore checkpoint and initialize a fresh configuration.
+- `--save`: write checkpoint every `--save-every` iterations.
+- `--saveAllMats`: dump raw matrix snapshots in chunked `.npy` files.
+- `--force`: overwrite existing observable files.
+- `--source`: optional source vector expression, e.g. `--source "np.linspace(-1,1,10)"`.
+
+## Outputs
+
+Each run writes into a model-specific directory under `--data-path`, with:
+
+- `evals.npz`: accumulated eigenvalue measurements
+- `corrs.npz`: accumulated correlator measurements
+- `metadata.json`: run + model metadata
+- `checkpoint.pt`: last saved configuration (only if `--save` is used)
+- `all_mats/` (optional): chunked raw matrix snapshots when `--saveAllMats` is enabled
+
+## Repository Layout
+
+- `main.py`: orchestration, model loading, trajectory loop, output handling
+- `cli.py`: argument parsing + validation
+- `hmc.py`: leapfrog + Metropolis accept/reject
+- `algebra.py`: matrix algebra helpers (Hermitian draws/projections, adjoint maps)
+- `models/`: one file per model (`build_model(args)` entry point)
