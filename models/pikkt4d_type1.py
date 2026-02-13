@@ -8,7 +8,11 @@ import numpy as np
 import torch
 
 from MatrixModelHMC_pytorch import config
-from MatrixModelHMC_pytorch.algebra import ad_matrix, get_eye_cached, get_trace_projector_cached
+from MatrixModelHMC_pytorch.algebra import (
+    add_trace_projector_inplace,
+    ad_matrix,
+    get_eye_cached,
+)
 from MatrixModelHMC_pytorch.models.base import MatrixModel
 from MatrixModelHMC_pytorch.models.utils import _commutator_action_sum
 
@@ -57,9 +61,8 @@ def _type1_logdet_impl(X: torch.Tensor, A: torch.Tensor) -> torch.Tensor:
     # without affecting the physics (since it's a constant factor in det).
     N = X.shape[-1]
     dim = N * N
-    P = get_trace_projector_cached(N, K.device, K.dtype)
-    K[:dim, :dim] += P
-    K[dim:, dim:] += P
+    add_trace_projector_inplace(K[:dim, :dim], N)
+    add_trace_projector_inplace(K[dim:, dim:], N)
 
     det = torch.slogdet(K)
     return det

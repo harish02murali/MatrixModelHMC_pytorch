@@ -114,6 +114,27 @@ def get_traceless_maps_cached(N: int, device: torch.device, dtype: torch.dtype):
 
 
 _projector_cache: dict[tuple[int, str, Optional[int], torch.dtype], torch.Tensor] = {}
+_trace_diag_indices_cache: dict[tuple[int, str, Optional[int]], torch.Tensor] = {}
+
+
+def get_trace_diag_indices_cached(N: int, device: torch.device) -> torch.Tensor:
+    """Cache flattened diagonal indices for vec(I) in column-major ordering."""
+    key = (N, device.type, device.index)
+    diag_indices = _trace_diag_indices_cache.get(key)
+    if diag_indices is None:
+        diag_indices = torch.arange(0, N * N, N + 1, device=device, dtype=torch.long)
+        _trace_diag_indices_cache[key] = diag_indices
+    return diag_indices
+
+
+def add_trace_projector_inplace(block: torch.Tensor, N: int) -> None:
+    """
+    Add P = (1/N) |I><I| to an (N^2 x N^2) block without materializing dense P.
+
+    This lifts the trace-mode zero mode while touching only the N x N trace sub-block.
+    """
+    diag_indices = get_trace_diag_indices_cached(N, block.device)
+    block[diag_indices.unsqueeze(-1), diag_indices] += block.new_tensor(1.0 / N)
 
 
 def get_trace_projector_cached(N: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
@@ -222,9 +243,11 @@ def spinJMatrices(j_val: float):
 
 
 __all__ = [
+    "add_trace_projector_inplace",
     "ad_matrix",
     "comm",
     "get_eye_cached",
+    "get_trace_diag_indices_cached",
     "get_trace_projector_cached",
     "kron_2d",
     "makeH",

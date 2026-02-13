@@ -9,9 +9,9 @@ import torch
 
 from MatrixModelHMC_pytorch import config
 from MatrixModelHMC_pytorch.algebra import (
+    add_trace_projector_inplace,
     ad_matrix,
     get_eye_cached,
-    get_trace_projector_cached,
     makeH,
     random_hermitian,
     spinJMatrices,
@@ -119,9 +119,8 @@ class PIKKTTypeIIModel(MatrixModel):
 
         N = X.shape[-1]
         dim = N * N
-        P = get_trace_projector_cached(N, K.device, K.dtype)
-        K[:dim, :dim] += P
-        K[dim:, dim:] += P
+        add_trace_projector_inplace(K[:dim, :dim], N)
+        add_trace_projector_inplace(K[dim:, dim:], N)
         return K
 
     def _fermion_force(self, X: torch.Tensor) -> torch.Tensor:
