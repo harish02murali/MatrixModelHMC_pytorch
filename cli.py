@@ -31,7 +31,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         required=True,
         help=(
             "Matrix model name registered in the models package (e.g., 1mm, "
-            "pikkt4d_type1, pikkt4d_type2, pikkt10d, yangmills)"
+            "pikkt4d_type1, pikkt4d_type2, pikkt4d_type2_rhmc, pikkt10d, yangmills)"
         ),
     )
     parser.add_argument("--resume", action="store_true", help="Load a checkpoint if present")
@@ -70,6 +70,24 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="Replace X4 -> i X4 in the potential (and corresponding force)",
     )
+    rhmc_group = parser.add_argument_group(
+        "RHMC options", "Relevant for --model pikkt4d_type2_rhmc"
+    )
+    rhmc_group.add_argument("--rhmc-order", type=int, default=12, help="Number of partial-fraction shifts")
+    rhmc_group.add_argument(
+        "--rhmc-lmin",
+        type=float,
+        default=None,
+        help="Lower spectral bound for RHMC rational fit (auto-probed if omitted)",
+    )
+    rhmc_group.add_argument(
+        "--rhmc-lmax",
+        type=float,
+        default=None,
+        help="Upper spectral bound for RHMC rational fit (auto-probed if omitted)",
+    )
+    rhmc_group.add_argument("--rhmc-cg-tol", type=float, default=1e-8, help="Shifted CG relative tolerance")
+    rhmc_group.add_argument("--rhmc-cg-maxiter", type=int, default=400, help="Shifted CG maximum iterations")
     args = parser.parse_args(argv)
     validate_args(args)
     return args
@@ -91,6 +109,21 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("pIKKT Type I requires exactly one coupling g via --coupling g")
     if model_lower == "pikkt4d_type2" and len(args.coupling) != 2:
         raise ValueError("pIKKT Type II requires exactly two couplings via --coupling g omega")
+    if model_lower == "pikkt4d_type2_rhmc":
+        if len(args.coupling) != 2:
+            raise ValueError("pIKKT Type II RHMC requires exactly two couplings via --coupling g omega")
+        if args.rhmc_order < 1:
+            raise ValueError("--rhmc-order must be positive")
+        if (args.rhmc_lmin is None) ^ (args.rhmc_lmax is None):
+            raise ValueError("Specify both --rhmc-lmin and --rhmc-lmax, or neither for auto-probe")
+        if args.rhmc_lmin is not None and args.rhmc_lmin <= 0:
+            raise ValueError("--rhmc-lmin must be > 0")
+        if args.rhmc_lmax is not None and args.rhmc_lmax <= args.rhmc_lmin:
+            raise ValueError("--rhmc-lmax must be > --rhmc-lmin")
+        if args.rhmc_cg_tol <= 0:
+            raise ValueError("--rhmc-cg-tol must be > 0")
+        if args.rhmc_cg_maxiter < 1:
+            raise ValueError("--rhmc-cg-maxiter must be positive")
     if model_lower == "pikkt10d":
         if len(args.coupling) != 1:
             raise ValueError("pikkt10d requires exactly one coupling g via --coupling g")

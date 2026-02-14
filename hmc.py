@@ -32,6 +32,9 @@ def hamil(X: torch.Tensor, mom_X: torch.Tensor, model: Any) -> float:
 def leapfrog(X: torch.Tensor, hmc_params: HMCParams, model: Any) -> tuple[torch.Tensor, float, float]:
     """Symplectic leapfrog integrator returning the proposal and initial/final energies."""
     dt_local = hmc_params.dt
+    begin_traj = getattr(model, "begin_trajectory", None)
+    if callable(begin_traj):
+        begin_traj(X)
 
     mom_X = torch.stack([random_hermitian(model.ncol) for _ in range(model.nmat)], dim=0)
     ham_init = hamil(X, mom_X, model)
@@ -57,9 +60,12 @@ def update(acc_count: int, hmc_params: HMCParams, model: Any, reject_prob: float
     X_bak = X.clone()
     X_new, H0, H1 = leapfrog(X, hmc_params, model)
     dH = H1 - H0
+    finite_h0 = np.isfinite(H0)
+    finite_h1 = np.isfinite(H1)
+    finite_dh = np.isfinite(dH)
 
-    accept = True
-    if reject_prob > 0.0:
+    accept = bool(finite_h0 and finite_h1 and finite_dh)
+    if accept and reject_prob > 0.0:
         r = random.uniform(0.0, reject_prob)
         if dH > 0.0:
             accept = (-dH) > math.log(r)
@@ -70,7 +76,18 @@ def update(acc_count: int, hmc_params: HMCParams, model: Any, reject_prob: float
         print(f"ACCEPT: dH={dH: 8.3f}, expDH={np.exp(-dH): 8.3f}, H0={H0: 8.4f}, ", model.status_string())
     else:
         model.set_state(X_bak)
-        print(f"REJECT: dH={dH: 8.3f}, expDH={np.exp(-dH): 8.3f}, H0={H0: 8.4f}, ", model.status_string())
+        if finite_h0 and finite_h1 and finite_dh:
+            print(f"REJECT: dH={dH: 8.3f}, expDH={np.exp(-dH): 8.3f}, H0={H0: 8.4f}, ", model.status_string())
+        else:
+            print(
+                "REJECT: non-finite Hamiltonian encountered "
+                f"(H0={H0}, H1={H1}, dH={dH}), ",
+                model.status_string(),
+            )
+
+    end_traj = getattr(model, "end_trajectory", None)
+    if callable(end_traj):
+        end_traj(accept)
 
     return acc_count
 
