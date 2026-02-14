@@ -102,6 +102,7 @@ def _multi_shift_cg_solve(
     shifts: torch.Tensor,
     tol: float,
     maxiter: int,
+    finite_check_every: int = 1,
 ) -> torch.Tensor:
     """
     Solve (A + shift_s I)x_s = b for all shifts using one Krylov sequence.
@@ -111,6 +112,7 @@ def _multi_shift_cg_solve(
     """
     if b.ndim != 1:
         raise ValueError(f"multi-shift CG expects vector rhs, got shape {b.shape}")
+    finite_check_every = max(int(finite_check_every), 0)
 
     shifts = shifts.to(device=b.device, dtype=config.real_dtype)
     nshifts = int(shifts.numel())
@@ -143,23 +145,29 @@ def _multi_shift_cg_solve(
     alpha_prev: torch.Tensor | None = None
     beta_prev: torch.Tensor | None = None
 
+    def _check_now(it: int) -> bool:
+        return finite_check_every > 0 and (it % finite_check_every == 0)
+
     for it in range(maxiter):
         Ap = matvec(p)
-        if not torch.isfinite(Ap.real).all() or not torch.isfinite(Ap.imag).all():
-            break
+        if _check_now(it):
+            if (not torch.isfinite(Ap.real).all()) or (not torch.isfinite(Ap.imag).all()):
+                break
         pAp = torch.vdot(p, Ap).real
-        if (not torch.isfinite(pAp)) or pAp.abs() <= tiny:
+        if pAp.abs() <= tiny:
+            break
+        if _check_now(it) and (not torch.isfinite(pAp)):
             break
 
         beta = -rr / pAp
-        if not torch.isfinite(beta):
+        if _check_now(it) and (not torch.isfinite(beta)):
             break
         r = r + beta.to(dtype=b.dtype) * Ap
         rr_new = torch.vdot(r, r).real
-        if not torch.isfinite(rr_new):
+        if _check_now(it) and (not torch.isfinite(rr_new)):
             break
         alpha = rr_new / rr.clamp_min(tiny)
-        if not torch.isfinite(alpha):
+        if _check_now(it) and (not torch.isfinite(alpha)):
             break
 
         if it == 0 or alpha_prev is None or beta_prev is None:
@@ -170,11 +178,10 @@ def _multi_shift_cg_solve(
         denom = (hat_alpha - shifts * beta) / zeta + (one - hat_alpha) / zeta_prev
         denom = _safe_nonzero(denom)
         zeta_next = one / denom
-        if not torch.isfinite(zeta_next).all():
-            break
         ratio = zeta_next / zeta
-        if not torch.isfinite(ratio).all():
-            break
+        if _check_now(it):
+            if (not torch.isfinite(zeta_next).all()) or (not torch.isfinite(ratio).all()):
+                break
 
         beta_shift = ratio * beta
         # alpha_shift must scale as ratio^2 (not ratio).
@@ -185,20 +192,22 @@ def _multi_shift_cg_solve(
             zeta_next[:, None].to(dtype=b.dtype) * r[None, :]
             + alpha_shift[:, None].to(dtype=b.dtype) * p_shift
         )
-        if (
-            (not torch.isfinite(x_shift.real).all())
-            or (not torch.isfinite(x_shift.imag).all())
-            or (not torch.isfinite(p_shift.real).all())
-            or (not torch.isfinite(p_shift.imag).all())
-        ):
-            break
+        if _check_now(it):
+            if (
+                (not torch.isfinite(x_shift.real).all())
+                or (not torch.isfinite(x_shift.imag).all())
+                or (not torch.isfinite(p_shift.real).all())
+                or (not torch.isfinite(p_shift.imag).all())
+            ):
+                break
 
         if rr_new <= stop_sq:
             break
 
         p = r + alpha.to(dtype=b.dtype) * p
-        if (not torch.isfinite(p.real).all()) or (not torch.isfinite(p.imag).all()):
-            break
+        if _check_now(it):
+            if (not torch.isfinite(p.real).all()) or (not torch.isfinite(p.imag).all()):
+                break
         rr = rr_new
         alpha_prev = alpha
         beta_prev = beta
@@ -216,12 +225,20 @@ def _apply_rational_to_vec(
     betas: torch.Tensor,
     tol: float,
     maxiter: int,
+    finite_check_every: int = 1,
 ) -> torch.Tensor:
     """Apply c0 I + sum_j alpha_j (A + beta_j I)^-1 to vector b."""
     y = c0.to(dtype=b.dtype) * b
     if betas.numel() == 0:
         return y
-    x_shift = _multi_shift_cg_solve(matvec, b, betas, tol=tol, maxiter=maxiter)
+    x_shift = _multi_shift_cg_solve(
+        matvec,
+        b,
+        betas,
+        tol=tol,
+        maxiter=maxiter,
+        finite_check_every=finite_check_every,
+    )
     return y + torch.einsum("s,sn->n", alphas.to(dtype=b.dtype), x_shift)
 
 
@@ -263,6 +280,7 @@ class PIKKTTypeIIRHMCModel(MatrixModel):
         self.rhmc_lmax = float(rhmc_lmax) if rhmc_lmax is not None else None
         self.rhmc_cg_tol = float(rhmc_cg_tol)
         self.rhmc_cg_maxiter = int(rhmc_cg_maxiter)
+        self._rhmc_cg_finite_check_every = 16 if config.device.type == "cuda" else 1
         self._rhmc_window_pad = 3.0
         self._rhmc_probe_min_eval_raw: float | None = None
         self._rhmc_probe_max_eval_raw: float | None = None
@@ -519,6 +537,15 @@ class PIKKTTypeIIRHMCModel(MatrixModel):
     def _ad_action(X: torch.Tensor, A: torch.Tensor) -> torch.Tensor:
         return X @ A - A @ X
 
+    @staticmethod
+    def _ad_action_batch(X_ops: torch.Tensor, A_batch: torch.Tensor) -> torch.Tensor:
+        """
+        Batched commutators [X_k, A_s] for k in operators and s in RHS batch.
+        """
+        left = torch.matmul(X_ops[:, None, :, :], A_batch[None, :, :, :])
+        right = torch.matmul(A_batch[None, :, :, :], X_ops[:, None, :, :])
+        return left - right
+
     def _apply_K_vec(self, X_eff: torch.Tensor, psi: torch.Tensor) -> torch.Tensor:
         """Apply fermion operator K(X_eff) to vector(s) in column-major basis."""
         single = psi.ndim == 1
@@ -528,27 +555,23 @@ class PIKKTTypeIIRHMCModel(MatrixModel):
         n2 = self.ncol * self.ncol
         psi_u = psi[:, :n2]
         psi_l = psi[:, n2:]
-        A_u = self._vec_to_mat_col(psi_u)
-        A_l = self._vec_to_mat_col(psi_l)
+        A_u = self._vec_to_mat_col(psi_u).contiguous()
+        A_l = self._vec_to_mat_col(psi_l).contiguous()
 
-        X1, X2, X3, X4 = X_eff[:4]
-
-        ad1_u = self._ad_action(X1, A_u)
-        ad2_u = self._ad_action(X2, A_u)
-        ad3_u = self._ad_action(X3, A_u)
-        ad4_u = self._ad_action(X4, A_u)
-
-        ad1_l = self._ad_action(X1, A_l)
-        ad2_l = self._ad_action(X2, A_l)
-        ad3_l = self._ad_action(X3, A_l)
-        ad4_l = self._ad_action(X4, A_l)
+        ad_u = self._ad_action_batch(X_eff[:4], A_u)
+        ad_l = self._ad_action_batch(X_eff[:4], A_l)
 
         # K blocks in terms of raw ad_X operators (adX in fermionMat has extra i factor).
-        out_u = (-1j * ad4_u - ad3_u) + (1j * ad2_l - ad1_l)
-        out_l = (-1j * ad2_u - ad1_u) + (-1j * ad4_l + ad3_l)
+        out_u = (-1j * ad_u[3] - ad_u[2]) + (1j * ad_l[1] - ad_l[0])
+        out_l = (-1j * ad_u[1] - ad_u[0]) + (-1j * ad_l[3] + ad_l[2])
 
-        out_u = out_u - (2.0 / 3.0) * A_u + self._trace_project_matrix(A_u)
-        out_l = out_l - (2.0 / 3.0) * A_l + self._trace_project_matrix(A_l)
+        eye = get_eye_cached(self.ncol, device=A_u.device, dtype=A_u.dtype)
+        out_u = out_u - (2.0 / 3.0) * A_u + (A_u.diagonal(dim1=-2, dim2=-1).sum(-1) / self.ncol)[
+            ..., None, None
+        ] * eye
+        out_l = out_l - (2.0 / 3.0) * A_l + (A_l.diagonal(dim1=-2, dim2=-1).sum(-1) / self.ncol)[
+            ..., None, None
+        ] * eye
 
         out = torch.cat((self._mat_to_vec_col(out_u), self._mat_to_vec_col(out_l)), dim=-1)
         return out[0] if single else out
@@ -562,29 +585,23 @@ class PIKKTTypeIIRHMCModel(MatrixModel):
         n2 = self.ncol * self.ncol
         psi_u = psi[:, :n2]
         psi_l = psi[:, n2:]
-        A_u = self._vec_to_mat_col(psi_u)
-        A_l = self._vec_to_mat_col(psi_l)
+        A_u = self._vec_to_mat_col(psi_u).contiguous()
+        A_l = self._vec_to_mat_col(psi_l).contiguous()
 
-        X1d = X_eff[0].conj().transpose(-1, -2)
-        X2d = X_eff[1].conj().transpose(-1, -2)
-        X3d = X_eff[2].conj().transpose(-1, -2)
-        X4d = X_eff[3].conj().transpose(-1, -2)
+        X_ops_d = X_eff[:4].conj().transpose(-1, -2).contiguous()
+        ad_u = self._ad_action_batch(X_ops_d, A_u)
+        ad_l = self._ad_action_batch(X_ops_d, A_l)
 
-        ad1_u = self._ad_action(X1d, A_u)
-        ad2_u = self._ad_action(X2d, A_u)
-        ad3_u = self._ad_action(X3d, A_u)
-        ad4_u = self._ad_action(X4d, A_u)
+        out_u = (1j * ad_u[3] - ad_u[2]) + (-ad_l[0] + 1j * ad_l[1])
+        out_l = (-ad_u[0] - 1j * ad_u[1]) + (ad_l[2] + 1j * ad_l[3])
 
-        ad1_l = self._ad_action(X1d, A_l)
-        ad2_l = self._ad_action(X2d, A_l)
-        ad3_l = self._ad_action(X3d, A_l)
-        ad4_l = self._ad_action(X4d, A_l)
-
-        out_u = (1j * ad4_u - ad3_u) + (-ad1_l + 1j * ad2_l)
-        out_l = (-ad1_u - 1j * ad2_u) + (ad3_l + 1j * ad4_l)
-
-        out_u = out_u - (2.0 / 3.0) * A_u + self._trace_project_matrix(A_u)
-        out_l = out_l - (2.0 / 3.0) * A_l + self._trace_project_matrix(A_l)
+        eye = get_eye_cached(self.ncol, device=A_u.device, dtype=A_u.dtype)
+        out_u = out_u - (2.0 / 3.0) * A_u + (A_u.diagonal(dim1=-2, dim2=-1).sum(-1) / self.ncol)[
+            ..., None, None
+        ] * eye
+        out_l = out_l - (2.0 / 3.0) * A_l + (A_l.diagonal(dim1=-2, dim2=-1).sum(-1) / self.ncol)[
+            ..., None, None
+        ] * eye
 
         out = torch.cat((self._mat_to_vec_col(out_u), self._mat_to_vec_col(out_l)), dim=-1)
         return out[0] if single else out
@@ -621,6 +638,7 @@ class PIKKTTypeIIRHMCModel(MatrixModel):
                 betas=self._hb_betas.to(device=X_eff.device),
                 tol=self.rhmc_cg_tol,
                 maxiter=self.rhmc_cg_maxiter,
+                finite_check_every=self._rhmc_cg_finite_check_every,
             )
             self._phi = phi.detach()
 
@@ -675,6 +693,7 @@ class PIKKTTypeIIRHMCModel(MatrixModel):
             inv_betas,
             tol=self.rhmc_cg_tol,
             maxiter=self.rhmc_cg_maxiter,
+            finite_check_every=self._rhmc_cg_finite_check_every,
         )
         Kchis = self._apply_K_vec(X_eff, chis)
         coeff = (-2.0 * inv_alphas).to(dtype=X_eff.dtype)
@@ -781,6 +800,7 @@ class PIKKTTypeIIRHMCModel(MatrixModel):
             betas=self._inv_betas.to(device=X_eff.device),
             tol=self.rhmc_cg_tol,
             maxiter=self.rhmc_cg_maxiter,
+            finite_check_every=self._rhmc_cg_finite_check_every,
         )
         return torch.real(torch.vdot(phi, y))
 
@@ -838,6 +858,7 @@ class PIKKTTypeIIRHMCModel(MatrixModel):
             f"  Coupling Omega2/Omega1   = {self.omega}",
             f"  RHMC order               = {self.rhmc_order}",
             f"  RHMC CG tol / maxiter    = {self.rhmc_cg_tol:g} / {self.rhmc_cg_maxiter}",
+            f"  RHMC CG finite-check     = every {self._rhmc_cg_finite_check_every} iter(s)",
         ]
         if self.rhmc_lmin is None or self.rhmc_lmax is None:
             lines.append("  RHMC spectrum window     = auto (probe K^\\dagger K at runtime)")
@@ -877,6 +898,7 @@ class PIKKTTypeIIRHMCModel(MatrixModel):
                 "rhmc_lmax": self.rhmc_lmax,
                 "rhmc_cg_tol": self.rhmc_cg_tol,
                 "rhmc_cg_maxiter": self.rhmc_cg_maxiter,
+                "rhmc_cg_finite_check_every": self._rhmc_cg_finite_check_every,
                 "rhmc_fit_error_inv_sqrt": self._rhmc_fit_err_inv,
                 "rhmc_fit_error_heatbath_q1_4": self._rhmc_fit_err_hb,
                 "rhmc_probe_min_eval_raw": self._rhmc_probe_min_eval_raw,
