@@ -113,6 +113,8 @@ def _multi_shift_cg_solve(
     if b.ndim != 1:
         raise ValueError(f"multi-shift CG expects vector rhs, got shape {b.shape}")
     finite_check_every = max(int(finite_check_every), 0)
+    # Convergence polling less frequently avoids host-device sync every iteration.
+    convergence_check_every = 8 if b.device.type == "cuda" else 1
 
     shifts = shifts.to(device=b.device, dtype=config.real_dtype)
     nshifts = int(shifts.numel())
@@ -142,77 +144,67 @@ def _multi_shift_cg_solve(
 
     zeta_prev = torch.ones(nshifts, dtype=config.real_dtype, device=b.device)
     zeta = torch.ones(nshifts, dtype=config.real_dtype, device=b.device)
-    alpha_prev: torch.Tensor | None = None
-    beta_prev: torch.Tensor | None = None
-
-    def _check_now(it: int) -> bool:
-        return finite_check_every > 0 and (it % finite_check_every == 0)
+    alpha_prev = one.clone()
+    beta_prev = -one.clone()
+    iter_idx = torch.zeros((), dtype=torch.int64, device=b.device)
 
     for it in range(maxiter):
         Ap = matvec(p)
-        if _check_now(it):
-            if (not torch.isfinite(Ap.real).all()) or (not torch.isfinite(Ap.imag).all()):
-                break
         pAp = torch.vdot(p, Ap).real
-        if pAp.abs() <= tiny:
-            break
-        if _check_now(it) and (not torch.isfinite(pAp)):
-            break
+        pAp = _safe_nonzero(pAp)
 
         beta = -rr / pAp
-        if _check_now(it) and (not torch.isfinite(beta)):
-            break
-        r = r + beta.to(dtype=b.dtype) * Ap
+        beta = torch.nan_to_num(beta, nan=0.0, posinf=0.0, neginf=0.0)
+        beta_c = beta.to(dtype=b.dtype)
+        r = r + beta_c * Ap
         rr_new = torch.vdot(r, r).real
-        if _check_now(it) and (not torch.isfinite(rr_new)):
-            break
         alpha = rr_new / rr.clamp_min(tiny)
-        if _check_now(it) and (not torch.isfinite(alpha)):
-            break
+        alpha = torch.nan_to_num(alpha, nan=0.0, posinf=0.0, neginf=0.0)
 
-        if it == 0 or alpha_prev is None or beta_prev is None:
-            hat_alpha = one
-        else:
-            hat_alpha = one + alpha_prev * beta / _safe_nonzero(beta_prev)
+        hat_alpha_prev = one + alpha_prev * beta / _safe_nonzero(beta_prev)
+        hat_alpha = torch.where(iter_idx > 0, hat_alpha_prev, one)
 
         denom = (hat_alpha - shifts * beta) / zeta + (one - hat_alpha) / zeta_prev
         denom = _safe_nonzero(denom)
         zeta_next = one / denom
         ratio = zeta_next / zeta
-        if _check_now(it):
-            if (not torch.isfinite(zeta_next).all()) or (not torch.isfinite(ratio).all()):
-                break
+        zeta_next = torch.nan_to_num(zeta_next, nan=0.0, posinf=0.0, neginf=0.0)
+        ratio = torch.nan_to_num(ratio, nan=0.0, posinf=0.0, neginf=0.0)
 
         beta_shift = ratio * beta
         # alpha_shift must scale as ratio^2 (not ratio).
         alpha_shift = (ratio * ratio) * alpha
 
-        x_shift = x_shift - beta_shift[:, None].to(dtype=b.dtype) * p_shift
+        beta_shift_c = beta_shift[:, None].to(dtype=b.dtype)
+        alpha_shift_c = alpha_shift[:, None].to(dtype=b.dtype)
+        zeta_next_c = zeta_next[:, None].to(dtype=b.dtype)
+        x_shift = x_shift - beta_shift_c * p_shift
         p_shift = (
-            zeta_next[:, None].to(dtype=b.dtype) * r[None, :]
-            + alpha_shift[:, None].to(dtype=b.dtype) * p_shift
+            zeta_next_c * r[None, :]
+            + alpha_shift_c * p_shift
         )
-        if _check_now(it):
-            if (
-                (not torch.isfinite(x_shift.real).all())
-                or (not torch.isfinite(x_shift.imag).all())
-                or (not torch.isfinite(p_shift.real).all())
-                or (not torch.isfinite(p_shift.imag).all())
-            ):
-                break
-
-        if rr_new <= stop_sq:
-            break
-
         p = r + alpha.to(dtype=b.dtype) * p
-        if _check_now(it):
-            if (not torch.isfinite(p.real).all()) or (not torch.isfinite(p.imag).all()):
-                break
         rr = rr_new
         alpha_prev = alpha
         beta_prev = beta
         zeta_prev = zeta
         zeta = zeta_next
+        iter_idx = iter_idx + 1
+
+        if finite_check_every > 0 and ((it + 1) % finite_check_every == 0):
+            finite_scalar = (
+                torch.isfinite(pAp)
+                & torch.isfinite(beta)
+                & torch.isfinite(alpha)
+                & torch.isfinite(rr)
+                & torch.isfinite(zeta).all()
+            )
+            if not bool(finite_scalar.item()):
+                break
+
+        if convergence_check_every > 0 and ((it + 1) % convergence_check_every == 0):
+            if bool((rr <= stop_sq).item()):
+                break
 
     return x_shift
 
